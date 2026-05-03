@@ -63,11 +63,17 @@ sudo systemctl restart taskboard-api.service
 sudo nginx -t
 sudo systemctl reload nginx
 
-# Bootstrap (idempotent — only does anything on first deploy)
+# Bootstrap (idempotent — only does anything on first deploy).
+# The CLI doesn't need TASKBOARD_SECRET_KEY (only sessions use it), so the
+# default DB/files paths are sufficient.
 echo "[deploy] running bootstrap"
-sudo -u "$SERVICE_USER" \
-  env "$(grep -E '^TASKBOARD_' "$ENV_FILE")" \
-  python3 "$APP_ROOT/cli.py" bootstrap --username admin | sudo tee -a /var/log/taskboard-bootstrap.log
+sudo touch /var/log/taskboard-bootstrap.log
+sudo chmod 0600 /var/log/taskboard-bootstrap.log
+sudo bash -c "
+  echo '----- bootstrap $(date -Iseconds) -----' >> /var/log/taskboard-bootstrap.log
+  sudo -u $SERVICE_USER python3 $APP_ROOT/cli.py bootstrap --username admin \
+    2>&1 | tee -a /var/log/taskboard-bootstrap.log
+"
 
 # Health check
 sleep 1
