@@ -56,13 +56,13 @@ def test_legacy_data_preserved_then_migrated_by_bootstrap(tmp_path, monkeypatch)
     from cli import cmd_bootstrap
 
     class A:
-        username = "camozeroday"
+        username = "testadmin"
         password = "Bootpass1!"
     cmd_bootstrap(A())
 
     with api.db() as c:
         # state migrated
-        row = c.execute("SELECT data FROM state WHERE user_id=(SELECT id FROM users WHERE username='camozeroday')").fetchone()
+        row = c.execute("SELECT data FROM state WHERE user_id=(SELECT id FROM users WHERE username='testadmin')").fetchone()
         assert row is not None and "legacy" in row[0]
         # legacy table is gone
         assert c.execute("SELECT name FROM sqlite_master WHERE name='state_legacy'").fetchone() is None
