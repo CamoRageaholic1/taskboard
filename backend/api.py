@@ -28,6 +28,7 @@ FILES_DIR = Path(os.environ.get("TASKBOARD_FILES_DIR", "/var/lib/taskboard/files
 MAX_UPLOAD_BYTES = int(os.environ.get("TASKBOARD_MAX_UPLOAD_BYTES", 25 * 1024 * 1024))
 SECRET_KEY = os.environ.get("TASKBOARD_SECRET_KEY") or secrets.token_hex(32)
 SESSION_DAYS = int(os.environ.get("TASKBOARD_SESSION_DAYS", "30"))
+STATIC_DIR = os.environ.get("TASKBOARD_STATIC_DIR")  # if set, Flask also serves the frontend
 
 APP = Flask(__name__)
 APP.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_BYTES + 1024
@@ -565,6 +566,31 @@ def admin_stats():
         backups_count=bks[0], backups_bytes=bks[1],
         files_on_disk_bytes=files_disk,
     )
+
+
+# ---------- static (opt-in for single-container deploys) ----------
+
+if STATIC_DIR:
+    from flask import send_from_directory
+
+    _static_root = Path(STATIC_DIR).resolve()
+
+    @APP.route("/", defaults={"path": ""})
+    @APP.route("/<path:path>")
+    def serve_static(path):
+        # /api/* must never be served from disk; if a real route exists Flask
+        # will dispatch first, but unmatched /api/<...> falls through here and
+        # we want a JSON 404, not an attempt to read api/<...> off disk.
+        if path.startswith("api/") or path.startswith("api"):
+            abort(404)
+        if not path:
+            path = "index.html"
+        target = (_static_root / path).resolve()
+        if _static_root not in target.parents and target != _static_root:
+            abort(404)
+        if not target.is_file():
+            abort(404)
+        return send_from_directory(_static_root, path)
 
 
 init()

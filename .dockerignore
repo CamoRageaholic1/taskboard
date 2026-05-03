@@ -1,0 +1,35 @@
+# keep image small + builds reproducible
+.git
+.github
+.gitignore
+.gitattributes
+.dockerignore
+
+# Test / lint caches
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.ruff_cache
+.coverage
+htmlcov
+
+# Editor / OS junk
+.DS_Store
+.vscode
+.idea
+*.swp
+
+# Local data — never bake user state into the image
+*.db
+*.db-shm
+*.db-wal
+data/
+files/
+dev*.db
+
+# Docs that aren't needed at runtime
+README.md
+deploy/
+
+# Tests aren't needed at runtime
+backend/tests/
