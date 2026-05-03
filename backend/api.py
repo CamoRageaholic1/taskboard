@@ -5,7 +5,7 @@ import os
 import secrets
 import sqlite3
 import tempfile
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file
@@ -59,7 +59,7 @@ def init():
 
 
 def now_iso():
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def short_id():
@@ -118,7 +118,7 @@ def list_attachments():
             (task_id,),
         ).fetchall()
     return jsonify([
-        dict(zip(["id", "task_id", "filename", "mime", "size", "sha256", "uploaded_at"], r))
+        dict(zip(["id", "task_id", "filename", "mime", "size", "sha256", "uploaded_at"], r, strict=True))
         for r in rows
     ])
 
@@ -213,7 +213,7 @@ def list_backups():
             "SELECT id,size,source,note,created_at FROM backups ORDER BY id DESC LIMIT 200"
         ).fetchall()
     return jsonify([
-        dict(zip(["id", "size", "source", "note", "created_at"], r)) for r in rows
+        dict(zip(["id", "size", "source", "note", "created_at"], r, strict=True)) for r in rows
     ])
 
 
