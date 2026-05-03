@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Taskboard — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f4ef; --surface: #fbfaf6; --surface-2: #efece4; --border: #e2ddd0;
+    --ink: #1c1b18; --ink-2: #4a4842; --ink-3: #807c70;
+    --accent: #c1542a; --danger: #b04030; --success: #5c7a3a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14130f; --surface: #1c1b17; --surface-2: #25241f; --border: #2e2c26;
+            --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
+            --accent: #e87a4a; --danger: #d96050; --success: #8aa860; }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--ink); padding: 32px; min-height: 100vh; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
+  h1 { font-family: 'Fraunces', serif; font-weight: 600; font-size: 24px; }
+  h1 .mark { color: var(--accent); }
+  .links a { color: var(--ink-3); text-decoration: none; margin-left: 16px; font-size: 13px; }
+  .links a:hover { color: var(--accent); }
+  .grid { display: grid; gap: 20px; max-width: 1100px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin-bottom: 16px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 14px; }
+  .stat { background: var(--surface-2); border-radius: 8px; padding: 14px; }
+  .stat .v { font-family: 'IBM Plex Mono', monospace; font-size: 22px; color: var(--ink); }
+  .stat .k { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin-top: 4px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); }
+  th { color: var(--ink-3); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+  td.actions { text-align: right; white-space: nowrap; }
+  td.actions button { margin-left: 6px; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: var(--surface-2); color: var(--ink-2); font-family: 'IBM Plex Mono', monospace; }
+  .pill.admin { background: var(--accent); color: white; }
+  .pill.off { color: var(--danger); }
+  button { font: inherit; font-size: 12px; padding: 5px 10px; background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--border); border-radius: 6px; cursor: pointer; }
+  button.primary { background: var(--accent); color: white; border: none; padding: 8px 14px; font-size: 13px; }
+  button.danger:hover { color: var(--danger); border-color: var(--danger); }
+  .new-user { display: grid; grid-template-columns: 1fr 1fr 120px 90px auto; gap: 8px; align-items: end; }
+  .new-user label { font-size: 11px; color: var(--ink-3); display: block; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .new-user input, .new-user select {
+    width: 100%; padding: 7px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; color: var(--ink); font: inherit; font-size: 13px;
+  }
+  .check { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--bg); padding: 10px 18px; border-radius: 8px; opacity: 0; transition: all 0.2s; pointer-events: none; }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  .empty { color: var(--ink-3); padding: 16px; text-align: center; font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1><span class="mark">·</span>Taskboard <span style="color: var(--ink-3); font-size: 16px; font-family: Inter; font-weight: 500;">Admin</span></h1>
+  <div class="links">
+    <a href="/">Back to board</a>
+    <a href="#" id="logout">Sign out</a>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="card">
+    <h2>Server stats</h2>
+    <div class="stats" id="stats"></div>
+  </div>
+
+  <div class="card">
+    <h2>Create user</h2>
+    <form id="create-form" class="new-user">
+      <div>
+        <label>Username</label>
+        <input id="cu" required pattern="[a-zA-Z0-9_-]{1,32}" placeholder="alice"/>
+      </div>
+      <div>
+        <label>Password (leave blank to auto-generate)</label>
+        <input id="cp" type="text" placeholder="auto"/>
+      </div>
+      <div>
+        <label>Role</label>
+        <select id="cr"><option value="user">user</option><option value="admin">admin</option></select>
+      </div>
+      <button class="primary" type="submit">Create</button>
+    </form>
+    <div id="created" style="margin-top: 12px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--success);"></div>
+  </div>
+
+  <div class="card">
+    <h2>Users</h2>
+    <table id="users">
+      <thead>
+        <tr><th>id</th><th>username</th><th>role</th><th>status</th><th>created</th><th>last login</th><th></th></tr>
+      </thead>
+      <tbody id="urows"></tbody>
+    </table>
+    <div id="uempty" class="empty" style="display: none;">No users yet.</div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const toast = (m) => {
+  const t = $('#toast'); t.textContent = m; t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2400);
+};
+const fmtBytes = (n) => n < 1024 ? `${n} B` : n < 1024*1024 ? `${(n/1024).toFixed(1)} KB` : n < 1024*1024*1024 ? `${(n/1024/1024).toFixed(1)} MB` : `${(n/1024/1024/1024).toFixed(2)} GB`;
+const fmtDate = (s) => s ? new Date(s).toLocaleString() : '-';
+
+async function gate() {
+  const r = await fetch('/api/session');
+  const j = await r.json();
+  if (!j.authenticated) { location.replace('/login.html'); return false; }
+  if (j.role !== 'admin') { location.replace('/'); return false; }
+  return j;
+}
+
+async function loadStats() {
+  const r = await fetch('/api/admin/stats');
+  if (!r.ok) return;
+  const s = await r.json();
+  const items = [
+    ['Users (active / total)', `${s.users_active} / ${s.users_total}`],
+    ['Boards in use', s.users_with_state],
+    ['Attachments', `${s.attachments_count} · ${fmtBytes(s.attachments_bytes)}`],
+    ['Snapshots', `${s.backups_count} · ${fmtBytes(s.backups_bytes)}`],
+    ['Files on disk', fmtBytes(s.files_on_disk_bytes)],
+  ];
+  $('#stats').innerHTML = items.map(([k, v]) => `<div class="stat"><div class="v">${v}</div><div class="k">${k}</div></div>`).join('');
+}
+
+async function loadUsers() {
+  const r = await fetch('/api/users');
+  const list = await r.json();
+  const tbody = $('#urows');
+  if (list.length === 0) { tbody.innerHTML = ''; $('#uempty').style.display = 'block'; return; }
+  $('#uempty').style.display = 'none';
+  tbody.innerHTML = list.map(u => `
+    <tr data-id="${u.id}">
+      <td>${u.id}</td>
+      <td>${u.username}</td>
+      <td><span class="pill ${u.role}">${u.role}</span></td>
+      <td>${u.is_active ? 'active' : '<span class="pill off">disabled</span>'}</td>
+      <td>${fmtDate(u.created_at)}</td>
+      <td>${fmtDate(u.last_login_at)}</td>
+      <td class="actions">
+        <button data-act="passwd">Reset PW</button>
+        <button data-act="role">${u.role === 'admin' ? 'Demote' : 'Promote'}</button>
+        <button data-act="${u.is_active ? 'disable' : 'enable'}">${u.is_active ? 'Disable' : 'Enable'}</button>
+        <button class="danger" data-act="delete">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-act]');
+  if (!btn) return;
+  const tr = btn.closest('tr'); const id = tr.dataset.id; const username = tr.children[1].textContent;
+  const act = btn.dataset.act;
+  try {
+    if (act === 'passwd') {
+      const p = prompt(`New password for "${username}" (blank = auto-generate)`) ?? null;
+      const body = p ? { password: p } : { password: undefined };
+      // For auto-gen we hit a custom helper: just generate client-side and POST.
+      let payload = body;
+      if (!p) {
+        const auto = await autoPassword();
+        payload = { password: auto };
+        toast(`Generated: ${auto} — copy now`);
+      }
+      const r = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+      const j = await r.json();
+      if (!r.ok) { toast(j.error || 'failed'); return; }
+      if (p) toast('Password updated');
+    } else if (act === 'role') {
+      const cur = tr.querySelector('.pill.admin') ? 'admin' : 'user';
+      const next = cur === 'admin' ? 'user' : 'admin';
+      const r = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ role: next }) });
+      if (r.ok) { toast(`${username} → ${next}`); loadUsers(); } else { const j = await r.json(); toast(j.error || 'failed'); }
+    } else if (act === 'disable' || act === 'enable') {
+      const r = await fetch(`/api/users/${id}`, { method: 'PATCH', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ is_active: act === 'enable' }) });
+      if (r.ok) { toast(`${username} ${act}d`); loadUsers(); }
+    } else if (act === 'delete') {
+      if (!confirm(`Delete user "${username}" and all their data? This cannot be undone.`)) return;
+      const r = await fetch(`/api/users/${id}`, { method: 'DELETE' });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok) { toast(`Deleted ${username}`); loadUsers(); loadStats(); } else { toast(j.error || 'failed'); }
+    }
+  } catch (ex) { toast('Network error'); }
+});
+
+async function autoPassword() {
+  const sets = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnopqrstuvwxyz', '23456789', '!@#$%^&*-_+='];
+  const all = sets.join('');
+  const arr = new Uint32Array(16);
+  crypto.getRandomValues(arr);
+  let chars = sets.map((s, i) => s[arr[i] % s.length]);
+  for (let i = 4; i < 16; i++) chars.push(all[arr[i] % all.length]);
+  for (let i = chars.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join('');
+}
+
+$('#create-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = $('#cu').value.trim().toLowerCase();
+  let password = $('#cp').value;
+  let generated = false;
+  if (!password) { password = await autoPassword(); generated = true; }
+  const role = $('#cr').value;
+  const r = await fetch('/api/users', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ username, password, role }) });
+  const j = await r.json();
+  if (!r.ok) { toast(j.error || 'create failed'); return; }
+  $('#created').textContent = `Created ${username} (${role}). Password: ${password}${generated ? '  (auto-generated — copy now)' : ''}`;
+  $('#cu').value = ''; $('#cp').value = '';
+  loadUsers(); loadStats();
+});
+
+$('#logout').addEventListener('click', async (e) => {
+  e.preventDefault();
+  await fetch('/api/session', { method: 'DELETE' });
+  location.replace('/login.html');
+});
+
+(async () => {
+  if (!(await gate())) return;
+  await Promise.all([loadStats(), loadUsers()]);
+})();
+</script>
+</body>
+</html>

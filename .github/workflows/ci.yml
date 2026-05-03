@@ -37,14 +37,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: HTML structure check
+      - name: HTML files present
         run: |
           test -f frontend/index.html
-          # Confirm key wiring is present
-          grep -q "fetchServerData" frontend/index.html
-          grep -q "Attachments" frontend/index.html
-          grep -q "BackupsModal" frontend/index.html
-          # Tag balance sanity (cheap heuristic)
-          opens=$(grep -oE "<[a-zA-Z]+" frontend/index.html | wc -l)
-          closes=$(grep -oE "</[a-zA-Z]+" frontend/index.html | wc -l)
-          echo "opens=$opens closes=$closes"
+          test -f frontend/login.html
+          test -f frontend/admin.html
+
+      - name: index.html wiring
+        run: |
+          for needle in fetchServerData fetchSession Attachments BackupsModal handleLogout; do
+            grep -q "$needle" frontend/index.html || { echo "missing: $needle"; exit 1; }
+          done
+
+      - name: login.html wiring
+        run: |
+          grep -q "/api/session" frontend/login.html
+          grep -q 'name="username"' frontend/login.html
+          grep -q 'name="password"' frontend/login.html
+
+      - name: admin.html wiring
+        run: |
+          for needle in /api/users /api/admin/stats autoPassword loadUsers; do
+            grep -q "$needle" frontend/admin.html || { echo "missing: $needle"; exit 1; }
+          done
