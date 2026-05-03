@@ -109,7 +109,20 @@ docker compose logs taskboard | grep -A1 'admin user'   # first-run admin passwo
 ```
 The image runs gunicorn serving both `/api/*` (Flask) and the frontend static files. Persistent state lives in the `taskboard-data` named volume.
 
-To run without compose:
+#### Pull a pre-built image (no local build)
+Every push to `main` publishes a multi-arch image (linux/amd64 + linux/arm64) to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/camorageaholic1/taskboard:latest
+docker run -d --name taskboard -p 8083:5050 \
+  -e TASKBOARD_SECRET_KEY=$(openssl rand -hex 32) \
+  -v taskboard-data:/var/lib/taskboard \
+  ghcr.io/camorageaholic1/taskboard:latest
+```
+
+Tags available: `latest` (main HEAD), `sha-<short>` (every commit), `vX.Y.Z` (release tags).
+
+#### Build locally
 ```bash
 docker build -t taskboard .
 docker run -d --name taskboard -p 8083:5050 \
