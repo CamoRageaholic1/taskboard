@@ -71,7 +71,7 @@ sudo touch /var/log/taskboard-bootstrap.log
 sudo chmod 0600 /var/log/taskboard-bootstrap.log
 sudo bash -c "
   echo '----- bootstrap $(date -Iseconds) -----' >> /var/log/taskboard-bootstrap.log
-  sudo -u $SERVICE_USER python3 $APP_ROOT/cli.py bootstrap --username admin \
+  sudo -u $SERVICE_USER python3 $APP_ROOT/cli.py bootstrap \
     2>&1 | tee -a /var/log/taskboard-bootstrap.log
 "
 
