@@ -61,6 +61,7 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | POST   | `/api/backups`                | user   | create snapshot               |
 | GET    | `/api/backups/<id>`           | user/admin | fetch snapshot          |
 | DELETE | `/api/backups/<id>`           | user/admin | remove                  |
+| GET    | `/api/search?q=TERM`          | user   | brute-force search across this user's projects, tasks, subtasks, notes (min 2 chars) |
 | GET    | `/api/notes?date=YYYY-MM-DD`  | user   | list this user's notes for that day (default: today) |
 | GET    | `/api/notes/dates`            | user   | dates with notes (recent 365) |
 | POST   | `/api/notes`                  | user   | create note `{title, body, date?}` |

@@ -1166,9 +1166,30 @@ function recurLabel(rule) {
 function CommandPalette({ data, onClose, onAction }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const inputRef = useRef(null);
+  const searchTimer = useRef(null);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
+
+  // Debounced server search when query is non-trivial
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (query.trim().length < 2) { setSearchResults([]); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/search?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+        if (r.ok) {
+          const j = await r.json();
+          setSearchResults(j.results || []);
+        }
+      } catch (e) {}
+      setSearching(false);
+    }, 200);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [query]);
 
   const items = useMemo(() => {
     const q = query.toLowerCase();
@@ -1185,9 +1206,37 @@ function CommandPalette({ data, onClose, onAction }) {
     list.push({ kind: 'action', id: 'a-snapshot', label: 'Save snapshot to server', hint: 'Action', action: { type: 'snapshot' } });
     list.push({ kind: 'action', id: 'a-restore', label: 'Browse server snapshots…', hint: 'Action', action: { type: 'restore' } });
     list.push({ kind: 'action', id: 'a-theme', label: 'Toggle dark mode', hint: 'Action', action: { type: 'theme' } });
-    if (!q) return list;
-    return list.filter(i => i.label.toLowerCase().includes(q));
-  }, [query, data]);
+
+    let local = q ? list.filter(i => i.label.toLowerCase().includes(q)) : list;
+
+    // Append server search hits (tasks / subtasks / notes / projects matched by content)
+    const serverHits = searchResults.map(h => {
+      if (h.kind === 'task') {
+        return { kind: 'task', id: 't-' + h.id, label: h.title,
+                 hint: `Task · ${h.project_name}${h.completed ? ' · done' : ''}`,
+                 snippet: h.snippet,
+                 action: { type: 'task', id: h.id, projectId: h.project_id } };
+      }
+      if (h.kind === 'subtask') {
+        return { kind: 'subtask', id: 's-' + h.id, label: h.title,
+                 hint: `Subtask · ${h.parent_title}`,
+                 action: { type: 'task', id: h.task_id, projectId: h.project_id } };
+      }
+      if (h.kind === 'note') {
+        return { kind: 'note', id: 'n-' + h.id, label: h.title,
+                 hint: `Note · ${h.date}`, snippet: h.snippet,
+                 action: { type: 'note', id: h.id, date: h.date } };
+      }
+      if (h.kind === 'project') {
+        return { kind: 'project', id: 'pr-' + h.id, label: h.title,
+                 hint: 'Project (matched)',
+                 action: { type: 'project', id: h.id } };
+      }
+      return null;
+    }).filter(Boolean);
+
+    return [...local, ...serverHits];
+  }, [query, data, searchResults]);
 
   useEffect(() => { setSelected(0); }, [query]);
 
@@ -1222,10 +1271,19 @@ function CommandPalette({ data, onClose, onAction }) {
               className={`palette-item ${i === selected ? 'selected' : ''}`}
               onClick={() => onAction(item.action)}
               onMouseEnter={() => setSelected(i)}
+              style={{ flexDirection: item.snippet ? 'column' : 'row', alignItems: item.snippet ? 'stretch' : 'center' }}
             >
-              {item.color && <span className="priority-dot" style={{ background: item.color }}/>}
-              <span className="item-label">{item.label}</span>
-              <span className="item-hint">{item.hint}</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, width: '100%' }}>
+                {item.color && <span className="priority-dot" style={{ background: item.color }}/>}
+                <span className="item-label">{item.label}</span>
+                <span className="item-hint">{item.hint}</span>
+              </div>
+              {item.snippet && (
+                <div style={{ color: 'var(--ink-3)', fontSize: 11.5, marginTop: 4, marginLeft: 0,
+                              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {item.snippet}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1537,10 +1595,12 @@ function NoteCard({ note, onChange, onDelete }) {
   );
 }
 
-function NotesView() {
-  const [date, setDate] = useState(todayStr());
+function NotesView({ initialDate }) {
+  const [date, setDate] = useState(initialDate || todayStr());
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  useEffect(() => { if (initialDate) setDate(initialDate); }, [initialDate]);
 
   const load = useCallback(async (d) => {
     setLoading(true);
@@ -2469,6 +2529,7 @@ function App() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
+  const [notesInitialDate, setNotesInitialDate] = useState(null);
   const newTaskRequestRef = useRef(0);
   const focusSearchRef = useRef(0);
   const [, forceTick] = useState(0);
@@ -2486,6 +2547,8 @@ function App() {
     setPaletteOpen(false);
     if (action.type === 'view') setData(d => ({ ...d, activeView: action.view }));
     else if (action.type === 'project') setData(d => ({ ...d, activeProjectId: action.id, activeView: 'project' }));
+    else if (action.type === 'task') setData(d => ({ ...d, activeProjectId: action.projectId, activeView: 'project' }));
+    else if (action.type === 'note') { setNotesInitialDate(action.date); setData(d => ({ ...d, activeView: 'notes' })); }
     else if (action.type === 'newtask') { setData(d => ({ ...d, activeView: 'project' })); setTimeout(requestNewTask, 50); }
     else if (action.type === 'newproject') addProjectFromApp();
     else if (action.type === 'export') exportJSON();
@@ -2557,7 +2620,7 @@ function App() {
         onLogout={handleLogout}
       />
       {data.activeView === 'notes'
-        ? <NotesView/>
+        ? <NotesView initialDate={notesInitialDate}/>
         : <MainView
             data={data}
             setData={setData}
