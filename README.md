@@ -86,7 +86,7 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 git pull
 ./deploy/deploy.sh
 ```
-Idempotent. Creates `taskboard` system user, installs deps, generates secret key on first run, bootstraps admin user `camozeroday` with a random password printed to `/var/log/taskboard-bootstrap.log`. Subsequent runs only update files and restart services.
+Idempotent. Creates `taskboard` system user, installs deps, generates secret key on first run, bootstraps an admin account (default username `admin`, override with `--username NAME` to `cli.py bootstrap`) with a random password printed to `/var/log/taskboard-bootstrap.log`. Subsequent runs only update files and restart services.
 
 ## Admin CLI
 ```bash
