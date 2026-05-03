@@ -89,15 +89,52 @@ def login():
         return jsonify(error="username and password required"), 400
     with db() as conn:
         row = conn.execute(
-            "SELECT id, password_hash, role, is_active FROM users WHERE username=?", (username,)
+            "SELECT id, password_hash, role, is_active, totp_enabled FROM users WHERE username=?",
+            (username,),
         ).fetchone()
     if not row or not row[3] or not verify_password(password, row[1]):
         return jsonify(error="invalid credentials"), 401
-    uid, _, role, _ = row
+    uid, _, role, _, totp_enabled = row
+    if totp_enabled:
+        # Stash a pending login. Cleared by TOTP step or by next /api/session POST.
+        from flask import session
+        session.clear()
+        session["pending_uid"] = uid
+        session.permanent = False
+        return jsonify(requires_totp=True, username=username), 200
     login_user(uid, role)
     with db() as conn:
         conn.execute("UPDATE users SET last_login_at=? WHERE id=?", (now_iso(), uid))
     return jsonify(id=uid, username=username, role=role)
+
+
+@APP.post("/api/session/totp")
+def login_totp():
+    """Second step of login when 2FA is enabled. Consumes session['pending_uid']."""
+    import pyotp
+    from flask import session
+    pending = session.get("pending_uid")
+    if not pending:
+        return jsonify(error="no pending login"), 400
+    payload = request.get_json(silent=True) or {}
+    code = (payload.get("code") or "").strip()
+    if not code or not code.isdigit() or len(code) not in (6, 8):
+        return jsonify(error="invalid code format"), 400
+    with db() as conn:
+        row = conn.execute(
+            "SELECT username, role, is_active, totp_secret, totp_enabled FROM users WHERE id=?",
+            (pending,),
+        ).fetchone()
+    if not row or not row[2] or not row[4] or not row[3]:
+        session.clear()
+        return jsonify(error="invalid"), 401
+    username, role, _, secret, _ = row
+    if not pyotp.TOTP(secret).verify(code, valid_window=1):
+        return jsonify(error="invalid code"), 401
+    login_user(pending, role)
+    with db() as conn:
+        conn.execute("UPDATE users SET last_login_at=? WHERE id=?", (now_iso(), pending))
+    return jsonify(id=pending, username=username, role=role)
 
 
 @APP.delete("/api/session")
@@ -448,6 +485,85 @@ def delete_note(note_id):
         if cur.rowcount == 0:
             return jsonify(error="not found"), 404
     return jsonify(ok=True)
+
+
+# ---------- 2FA (TOTP) setup / enable / disable ----------
+
+@APP.post("/api/2fa/setup")
+@require_user
+def totp_setup():
+    """Generate a candidate secret. Stores it but DOES NOT enable until /enable."""
+    import pyotp
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT username, totp_enabled FROM users WHERE id=?", (uid,)
+        ).fetchone()
+    if not row:
+        abort(404)
+    if row[1]:
+        return jsonify(error="2FA already enabled — disable first to re-enroll"), 400
+    secret = pyotp.random_base32()
+    with db() as conn:
+        conn.execute(
+            "UPDATE users SET totp_secret=?, totp_enabled=0 WHERE id=?",
+            (secret, uid),
+        )
+    uri = pyotp.TOTP(secret).provisioning_uri(name=row[0], issuer_name="Taskboard")
+    return jsonify(secret=secret, uri=uri)
+
+
+@APP.post("/api/2fa/enable")
+@require_user
+def totp_enable():
+    """Verify a code against the candidate secret, then flip enabled=1."""
+    import pyotp
+    payload = request.get_json(silent=True) or {}
+    code = (payload.get("code") or "").strip()
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT totp_secret, totp_enabled FROM users WHERE id=?", (uid,)
+        ).fetchone()
+    if not row or not row[0]:
+        return jsonify(error="run setup first"), 400
+    if row[1]:
+        return jsonify(error="already enabled"), 400
+    if not pyotp.TOTP(row[0]).verify(code, valid_window=1):
+        return jsonify(error="invalid code"), 401
+    with db() as conn:
+        conn.execute("UPDATE users SET totp_enabled=1 WHERE id=?", (uid,))
+    return jsonify(ok=True, enabled=True)
+
+
+@APP.post("/api/2fa/disable")
+@require_user
+def totp_disable():
+    """Disable 2FA. Requires a current TOTP code as proof of possession."""
+    import pyotp
+    payload = request.get_json(silent=True) or {}
+    code = (payload.get("code") or "").strip()
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT totp_secret, totp_enabled FROM users WHERE id=?", (uid,)
+        ).fetchone()
+    if not row or not row[1]:
+        return jsonify(error="2FA is not enabled"), 400
+    if not pyotp.TOTP(row[0]).verify(code, valid_window=1):
+        return jsonify(error="invalid code"), 401
+    with db() as conn:
+        conn.execute("UPDATE users SET totp_secret=NULL, totp_enabled=0 WHERE id=?", (uid,))
+    return jsonify(ok=True, enabled=False)
+
+
+@APP.get("/api/2fa/status")
+@require_user
+def totp_status():
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute("SELECT totp_enabled FROM users WHERE id=?", (uid,)).fetchone()
+    return jsonify(enabled=bool(row and row[0]))
 
 
 # ---------- iCal feed (no-auth subscription URL with per-user token) ----------

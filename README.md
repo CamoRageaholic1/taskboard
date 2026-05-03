@@ -48,9 +48,14 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | Method | Path                          | Auth   | Purpose                       |
 |--------|-------------------------------|--------|-------------------------------|
 | GET    | `/api/health`                 | none   | liveness                      |
-| POST   | `/api/session`                | none   | login: `{username, password}` |
+| POST   | `/api/session`                | none   | login: `{username, password}` — returns `{requires_totp:true}` if 2FA on |
+| POST   | `/api/session/totp`           | pending| second-factor login: `{code}` |
 | DELETE | `/api/session`                | none   | logout                        |
 | GET    | `/api/session`                | none   | whoami: `{authenticated, ...}`|
+| GET    | `/api/2fa/status`             | user   | `{enabled: bool}`              |
+| POST   | `/api/2fa/setup`              | user   | issue a candidate secret + otpauth URI |
+| POST   | `/api/2fa/enable`             | user   | verify code, flip enabled=true |
+| POST   | `/api/2fa/disable`            | user   | verify code, clear secret + disable |
 | GET    | `/api/data`                   | user   | this user's board state       |
 | POST   | `/api/data`                   | user   | replace state                 |
 | GET    | `/api/attachments?task_id=X`  | user   | list this user's files for X  |

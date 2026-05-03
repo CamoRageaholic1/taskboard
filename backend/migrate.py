@@ -128,4 +128,14 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 4)
         version = 4
 
+    if version < 5:
+        # v4 -> v5: TOTP-based 2FA per user
+        cols = _table_columns(conn, "users")
+        if "totp_secret" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN totp_secret TEXT")
+        if "totp_enabled" not in cols:
+            conn.execute("ALTER TABLE users ADD COLUMN totp_enabled INTEGER NOT NULL DEFAULT 0")
+        _set_schema_version(conn, 5)
+        version = 5
+
     return version
