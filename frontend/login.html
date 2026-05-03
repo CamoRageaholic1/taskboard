@@ -97,6 +97,12 @@
     <button id="b" type="submit">Sign in</button>
     <div class="err" id="e"></div>
   </form>
+  <form id="totpForm" style="display:none">
+    <label for="t">6-digit code from your authenticator app</label>
+    <input id="t" name="code" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="one-time-code" maxlength="8" required/>
+    <button id="tb" type="submit">Verify</button>
+    <div class="err" id="te"></div>
+  </form>
 </div>
 <script>
   const form = document.getElementById('f');
@@ -107,6 +113,15 @@
   fetch('/api/session').then(r => r.json()).then(j => {
     if (j.authenticated) location.replace(j.role === 'admin' ? '/' : '/');
   }).catch(() => {});
+
+  const totpForm = document.getElementById('totpForm');
+  const te = document.getElementById('te');
+  const tb = document.getElementById('tb');
+  const showTotpStep = () => {
+    form.style.display = 'none';
+    totpForm.style.display = '';
+    document.getElementById('t').focus();
+  };
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -121,6 +136,8 @@
       const j = await r.json();
       if (!r.ok) {
         err.textContent = j.error || 'Sign in failed';
+      } else if (j.requires_totp) {
+        showTotpStep();
       } else {
         location.replace('/');
       }
@@ -128,6 +145,29 @@
       err.textContent = 'Network error';
     } finally {
       btn.disabled = false;
+    }
+  });
+
+  totpForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    te.textContent = '';
+    tb.disabled = true;
+    try {
+      const r = await fetch('/api/session/totp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: totpForm.code.value.trim() }),
+      });
+      const j = await r.json();
+      if (!r.ok) {
+        te.textContent = j.error || 'Invalid code';
+      } else {
+        location.replace('/');
+      }
+    } catch (ex) {
+      te.textContent = 'Network error';
+    } finally {
+      tb.disabled = false;
     }
   });
 </script>

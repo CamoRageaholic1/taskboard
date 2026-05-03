@@ -28,6 +28,7 @@ sudo install -d -o root -g "$SERVICE_USER" -m 0750 "$ETC_ROOT"
 NEED=()
 python3 -c "import flask" 2>/dev/null || NEED+=(python3-flask)
 python3 -c "import bcrypt" 2>/dev/null || NEED+=(python3-bcrypt)
+python3 -c "import pyotp" 2>/dev/null || NEED+=(python3-pyotp)
 if [ ${#NEED[@]} -gt 0 ]; then
   echo "[deploy] installing: ${NEED[*]}"
   sudo apt-get update
