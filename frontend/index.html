@@ -1205,6 +1205,7 @@ function CommandPalette({ data, onClose, onAction }) {
     list.push({ kind: 'action', id: 'a-export', label: 'Export backup (download)', hint: 'Action', action: { type: 'export' } });
     list.push({ kind: 'action', id: 'a-snapshot', label: 'Save snapshot to server', hint: 'Action', action: { type: 'snapshot' } });
     list.push({ kind: 'action', id: 'a-restore', label: 'Browse server snapshots…', hint: 'Action', action: { type: 'restore' } });
+    list.push({ kind: 'action', id: 'a-feed', label: 'Calendar feed (iCal subscription)…', hint: 'Action', action: { type: 'feed' } });
     list.push({ kind: 'action', id: 'a-theme', label: 'Toggle dark mode', hint: 'Action', action: { type: 'theme' } });
 
     let local = q ? list.filter(i => i.label.toLowerCase().includes(q)) : list;
@@ -1796,6 +1797,70 @@ function Attachments({ taskId }) {
       <button className="add-subtask" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
         <Icon.Plus size={11}/> {uploading ? 'Uploading…' : 'Attach file'}
       </button>
+    </div>
+  );
+}
+
+function CalendarFeedModal({ onClose }) {
+  const [token, setToken] = useState(null);
+  const [url, setUrl] = useState('');
+  const [busy, setBusy] = useState(false);
+  const toast = (m) => { try { window.__taskboardToast?.(m); } catch (e) {} };
+
+  const load = async () => {
+    try {
+      const r = await fetch('/api/feed/token', { cache: 'no-store' });
+      if (r.ok) { const j = await r.json(); setToken(j.token); setUrl(`${location.origin}${j.url}`); }
+    } catch (e) {}
+  };
+  useEffect(() => { load(); }, []);
+
+  const rotate = async () => {
+    if (!confirm('Rotate the feed token? Existing calendar subscriptions will stop working until you update the URL.')) return;
+    setBusy(true);
+    try {
+      const r = await fetch('/api/feed/token', { method: 'POST' });
+      if (r.ok) { const j = await r.json(); setToken(j.token); setUrl(`${location.origin}${j.url}`); toast('Rotated'); }
+    } catch (e) { toast('Rotate failed'); }
+    setBusy(false);
+  };
+
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(url); toast('Copied'); } catch (e) { toast('Copy failed'); }
+  };
+
+  return (
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" style={{ width: 600 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>Calendar feed (iCal subscription)</div>
+          <button className="icon-btn" onClick={onClose}><Icon.X size={14}/></button>
+        </div>
+        <div style={{ padding: '16px 18px' }}>
+          <p style={{ color: 'var(--ink-2)', fontSize: 13, marginBottom: 12 }}>
+            Subscribe to this URL in Google Calendar, Apple Calendar, or any iCal-compatible client.
+            All your <strong>open tasks with due dates</strong> appear as all-day events. Updates poll every few minutes
+            (controlled by your calendar app).
+          </p>
+          <div style={{
+            display: 'flex', gap: 8, padding: '10px 12px',
+            background: 'var(--surface-2)', border: '1px solid var(--border)',
+            borderRadius: 6, marginBottom: 12,
+          }}>
+            <code style={{
+              flex: 1, fontFamily: 'IBM Plex Mono, monospace', fontSize: 12,
+              color: 'var(--ink)', wordBreak: 'break-all', userSelect: 'all',
+            }}>{url || 'Loading…'}</code>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="add-subtask" onClick={copy} disabled={!url}>Copy URL</button>
+            <button className="add-subtask" onClick={rotate} disabled={busy || !url}>{busy ? 'Rotating…' : 'Rotate token'}</button>
+          </div>
+          <p style={{ color: 'var(--ink-3)', fontSize: 11, marginTop: 12, fontFamily: 'IBM Plex Mono, monospace' }}>
+            The token IS the auth — anyone with the URL can read your task list. Rotate if it leaks.
+          </p>
+        </div>
+      </div>
     </div>
   );
 }
@@ -2529,6 +2594,7 @@ function App() {
 
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [backupsOpen, setBackupsOpen] = useState(false);
+  const [feedOpen, setFeedOpen] = useState(false);
   const [notesInitialDate, setNotesInitialDate] = useState(null);
   const newTaskRequestRef = useRef(0);
   const focusSearchRef = useRef(0);
@@ -2554,6 +2620,7 @@ function App() {
     else if (action.type === 'export') exportJSON();
     else if (action.type === 'snapshot') saveSnapshot();
     else if (action.type === 'restore') setBackupsOpen(true);
+    else if (action.type === 'feed') setFeedOpen(true);
     else if (action.type === 'theme') setTheme(t => t === 'light' ? 'dark' : 'light');
   };
 
@@ -2642,6 +2709,7 @@ function App() {
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
       {paletteOpen && <CommandPalette data={data} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction}/>}
       {backupsOpen && <BackupsModal onClose={() => setBackupsOpen(false)} onRestore={(d) => setData(d)}/>}
+      {feedOpen && <CalendarFeedModal onClose={() => setFeedOpen(false)}/>}
     </>
   );
 }

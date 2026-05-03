@@ -62,6 +62,9 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | GET    | `/api/backups/<id>`           | user/admin | fetch snapshot          |
 | DELETE | `/api/backups/<id>`           | user/admin | remove                  |
 | GET    | `/api/search?q=TERM`          | user   | brute-force search across this user's projects, tasks, subtasks, notes (min 2 chars) |
+| GET    | `/api/feed/token`             | user   | get this user's iCal feed token (creates one if missing) |
+| POST   | `/api/feed/token`             | user   | rotate the feed token (old subscriptions break) |
+| GET    | `/api/calendar/<token>.ics`   | none*  | iCal feed of open due-dated tasks (token IS the auth) |
 | GET    | `/api/notes?date=YYYY-MM-DD`  | user   | list this user's notes for that day (default: today) |
 | GET    | `/api/notes/dates`            | user   | dates with notes (recent 365) |
 | POST   | `/api/notes`                  | user   | create note `{title, body, date?}` |
