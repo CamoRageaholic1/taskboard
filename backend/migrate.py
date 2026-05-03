@@ -120,4 +120,12 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 3)
         version = 3
 
+    if version < 4:
+        # v3 -> v4: per-user feed_token for unauthenticated iCal subscription URLs
+        if "feed_token" not in _table_columns(conn, "users"):
+            conn.execute("ALTER TABLE users ADD COLUMN feed_token TEXT")
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_feed_token ON users(feed_token) WHERE feed_token IS NOT NULL")
+        _set_schema_version(conn, 4)
+        version = 4
+
     return version

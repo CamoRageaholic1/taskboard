@@ -45,7 +45,7 @@ jobs:
 
       - name: index.html wiring
         run: |
-          for needle in fetchServerData fetchSession Attachments BackupsModal handleLogout NotesView NoteCard "Daily Notes" marked.min.js searchResults "/api/search"; do
+          for needle in fetchServerData fetchSession Attachments BackupsModal handleLogout NotesView NoteCard "Daily Notes" marked.min.js searchResults "/api/search" CalendarFeedModal "/api/feed/token"; do
             grep -q "$needle" frontend/index.html || { echo "missing: $needle"; exit 1; }
           done
 

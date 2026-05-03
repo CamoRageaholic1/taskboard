@@ -450,6 +450,108 @@ def delete_note(note_id):
     return jsonify(ok=True)
 
 
+# ---------- iCal feed (no-auth subscription URL with per-user token) ----------
+
+def _ical_escape(s: str) -> str:
+    if not s:
+        return ""
+    return (s.replace("\\", "\\\\").replace(",", "\\,")
+             .replace(";", "\\;").replace("\n", "\\n"))
+
+
+def _ical_for_state(state: dict, username: str) -> str:
+    """Render a user's open, due-dated tasks as a VCALENDAR."""
+    lines = [
+        "BEGIN:VCALENDAR",
+        "VERSION:2.0",
+        f"PRODID:-//taskboard//{username}//EN",
+        "CALSCALE:GREGORIAN",
+        "METHOD:PUBLISH",
+        f"X-WR-CALNAME:Taskboard — {_ical_escape(username)}",
+    ]
+    now = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    for p in state.get("projects", []):
+        for t in p.get("tasks", []):
+            if t.get("completed"):
+                continue
+            due = t.get("dueDate")
+            if not due:
+                continue
+            try:
+                d = datetime.strptime(due, "%Y-%m-%d").date()
+            except ValueError:
+                continue
+            uid = f"{t.get('id','x')}@taskboard.local"
+            summary = _ical_escape(t.get("title") or "Untitled")
+            desc_parts = []
+            if p.get("name"):
+                desc_parts.append(f"Project: {p['name']}")
+            if t.get("priority") and t["priority"] != "none":
+                desc_parts.append(f"Priority: {t['priority']}")
+            if t.get("description"):
+                desc_parts.append(t["description"])
+            description = _ical_escape("\n".join(desc_parts))
+            lines += [
+                "BEGIN:VEVENT",
+                f"UID:{uid}",
+                f"DTSTAMP:{now}",
+                f"DTSTART;VALUE=DATE:{d.strftime('%Y%m%d')}",
+                f"DTEND;VALUE=DATE:{(d + timedelta(days=1)).strftime('%Y%m%d')}",
+                f"SUMMARY:{summary}",
+                f"DESCRIPTION:{description}",
+                "TRANSP:TRANSPARENT",
+                "END:VEVENT",
+            ]
+    lines.append("END:VCALENDAR")
+    # iCal RFC 5545 wants CRLF line endings
+    return "\r\n".join(lines) + "\r\n"
+
+
+@APP.get("/api/feed/token")
+@require_user
+def get_feed_token():
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute("SELECT feed_token FROM users WHERE id=?", (uid,)).fetchone()
+    token = row[0] if row else None
+    if not token:
+        token = secrets.token_urlsafe(24)
+        with db() as conn:
+            conn.execute("UPDATE users SET feed_token=? WHERE id=?", (token, uid))
+    return jsonify(token=token, url=f"/api/calendar/{token}.ics")
+
+
+@APP.post("/api/feed/token")
+@require_user
+def rotate_feed_token():
+    uid = current_user_id()
+    token = secrets.token_urlsafe(24)
+    with db() as conn:
+        conn.execute("UPDATE users SET feed_token=? WHERE id=?", (token, uid))
+    return jsonify(token=token, url=f"/api/calendar/{token}.ics")
+
+
+@APP.get("/api/calendar/<token>.ics")
+def calendar_feed(token):
+    if not token or len(token) < 16:
+        abort(404)
+    with db() as conn:
+        row = conn.execute(
+            "SELECT id, username FROM users WHERE feed_token=? AND is_active=1",
+            (token,),
+        ).fetchone()
+        if not row:
+            abort(404)
+        uid, username = row
+        state_row = conn.execute("SELECT data FROM state WHERE user_id=?", (uid,)).fetchone()
+    state = json.loads(state_row[0]) if state_row else {}
+    body = _ical_for_state(state, username)
+    return body, 200, {
+        "Content-Type": "text/calendar; charset=utf-8",
+        "Cache-Control": "public, max-age=300",
+    }
+
+
 # ---------- search (across this user's projects/tasks/subtasks/notes) ----------
 
 def _snippet(text: str, q: str, before: int = 40, after: int = 100) -> str:
