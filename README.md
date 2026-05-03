@@ -82,11 +82,38 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | `TASKBOARD_SESSION_DAYS`     | `30`                                 |
 
 ## Deploy
+
+Two paths — pick whichever you prefer. Both produce the same app at the same port.
+
+### Option A — bare metal (systemd + nginx, e.g. on a Pi)
 ```bash
 git pull
 ./deploy/deploy.sh
 ```
 Idempotent. Creates `taskboard` system user, installs deps, generates secret key on first run, bootstraps an admin account (default username `admin`, override with `--username NAME` to `cli.py bootstrap`) with a random password printed to `/var/log/taskboard-bootstrap.log`. Subsequent runs only update files and restart services.
+
+### Option B — Docker (single container)
+```bash
+echo "TASKBOARD_SECRET_KEY=$(openssl rand -hex 32)" > .env
+docker compose up -d
+docker compose logs taskboard | grep -A1 'admin user'   # first-run admin password
+```
+The image runs gunicorn serving both `/api/*` (Flask) and the frontend static files. Persistent state lives in the `taskboard-data` named volume.
+
+To run without compose:
+```bash
+docker build -t taskboard .
+docker run -d --name taskboard -p 8083:5050 \
+  -e TASKBOARD_SECRET_KEY=$(openssl rand -hex 32) \
+  -v taskboard-data:/var/lib/taskboard \
+  taskboard
+```
+
+To back up the volume:
+```bash
+docker run --rm -v taskboard-data:/data -v "$PWD":/backup alpine \
+  tar czf /backup/taskboard-$(date +%F).tgz -C /data .
+```
 
 ## Admin CLI
 ```bash
