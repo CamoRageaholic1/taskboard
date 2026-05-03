@@ -2,6 +2,7 @@
 import hashlib
 import json
 import os
+import re
 import secrets
 import sqlite3
 import tempfile
@@ -334,6 +335,117 @@ def delete_backup(bid):
         if row[0] != uid and current_user_role() != "admin":
             return jsonify(error="forbidden"), 403
         conn.execute("DELETE FROM backups WHERE id=?", (bid,))
+    return jsonify(ok=True)
+
+
+# ---------- notes (per-user daily capture pad) ----------
+
+_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def _today_iso() -> str:
+    return datetime.now(UTC).date().isoformat()
+
+
+def _note_dict(row):
+    return {
+        "id": row[0], "date": row[1], "title": row[2], "body": row[3],
+        "created_at": row[4], "updated_at": row[5],
+    }
+
+
+@APP.get("/api/notes")
+@require_user
+def list_notes():
+    date = request.args.get("date") or _today_iso()
+    if not _DATE_RE.match(date):
+        return jsonify(error="date must be YYYY-MM-DD"), 400
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id,date,title,body,created_at,updated_at FROM notes "
+            "WHERE user_id=? AND date=? ORDER BY created_at",
+            (uid, date),
+        ).fetchall()
+    return jsonify([_note_dict(r) for r in rows])
+
+
+@APP.get("/api/notes/dates")
+@require_user
+def list_note_dates():
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT date, COUNT(*) FROM notes WHERE user_id=? GROUP BY date ORDER BY date DESC LIMIT 365",
+            (uid,),
+        ).fetchall()
+    return jsonify([{"date": r[0], "count": r[1]} for r in rows])
+
+
+@APP.post("/api/notes")
+@require_user
+def create_note():
+    payload = request.get_json(silent=True) or {}
+    date = payload.get("date") or _today_iso()
+    if not _DATE_RE.match(date):
+        return jsonify(error="date must be YYYY-MM-DD"), 400
+    title = (payload.get("title") or "")[:300]
+    body = (payload.get("body") or "")[:50_000]
+    nid = short_id()
+    ts = now_iso()
+    uid = current_user_id()
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (nid, uid, date, title, body, ts, ts),
+        )
+    return jsonify(id=nid, date=date, title=title, body=body,
+                   created_at=ts, updated_at=ts), 201
+
+
+@APP.patch("/api/notes/<note_id>")
+@require_user
+def update_note(note_id):
+    payload = request.get_json(silent=True) or {}
+    sets, params = [], []
+    if "title" in payload:
+        sets.append("title=?")
+        params.append(str(payload["title"])[:300])
+    if "body" in payload:
+        sets.append("body=?")
+        params.append(str(payload["body"])[:50_000])
+    if "date" in payload:
+        if not _DATE_RE.match(payload["date"]):
+            return jsonify(error="date must be YYYY-MM-DD"), 400
+        sets.append("date=?")
+        params.append(payload["date"])
+    if not sets:
+        return jsonify(error="no fields to update"), 400
+    sets.append("updated_at=?")
+    params.append(now_iso())
+    uid = current_user_id()
+    params.extend([note_id, uid])
+    with db() as conn:
+        cur = conn.execute(
+            f"UPDATE notes SET {', '.join(sets)} WHERE id=? AND user_id=?", params
+        )
+        if cur.rowcount == 0:
+            return jsonify(error="not found"), 404
+        row = conn.execute(
+            "SELECT id,date,title,body,created_at,updated_at FROM notes WHERE id=?", (note_id,)
+        ).fetchone()
+    return jsonify(_note_dict(row))
+
+
+@APP.delete("/api/notes/<note_id>")
+@require_user
+def delete_note(note_id):
+    uid = current_user_id()
+    with db() as conn:
+        cur = conn.execute("DELETE FROM notes WHERE id=? AND user_id=?", (note_id, uid))
+        if cur.rowcount == 0:
+            return jsonify(error="not found"), 404
     return jsonify(ok=True)
 
 

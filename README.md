@@ -6,6 +6,7 @@ Self-hosted multi-user task & project board. React UI in single-file HTML, Flask
 - **Multi-user** with `admin` / `user` roles. Per-user private boards (no cross-visibility for non-admins).
 - Projects with colored tasks, subtasks, due dates, priority, recurrence
 - Per-task file attachments (max 25 MB, deduped by SHA-256)
+- **Daily Notes** — per-user, per-day capture pad: many notes per day, each with title + markdown body, edit/preview toggle, debounced auto-save
 - Server-side state snapshots (Cmd/Ctrl-K → "Save snapshot to server" / "Browse server snapshots…")
 - LocalStorage acts as offline cache; server is source of truth
 - Admin dashboard at `/admin.html` — create/disable/promote users, reset passwords, see usage stats
@@ -60,6 +61,11 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | POST   | `/api/backups`                | user   | create snapshot               |
 | GET    | `/api/backups/<id>`           | user/admin | fetch snapshot          |
 | DELETE | `/api/backups/<id>`           | user/admin | remove                  |
+| GET    | `/api/notes?date=YYYY-MM-DD`  | user   | list this user's notes for that day (default: today) |
+| GET    | `/api/notes/dates`            | user   | dates with notes (recent 365) |
+| POST   | `/api/notes`                  | user   | create note `{title, body, date?}` |
+| PATCH  | `/api/notes/<id>`             | user   | update title / body / date    |
+| DELETE | `/api/notes/<id>`             | user   | remove                        |
 | GET    | `/api/users`                  | admin  | list users                    |
 | POST   | `/api/users`                  | admin  | create user                   |
 | PATCH  | `/api/users/<id>`             | admin  | role / is_active / password   |
