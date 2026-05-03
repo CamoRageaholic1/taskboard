@@ -103,4 +103,21 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 2)
         version = 2
 
+    if version < 3:
+        # v2 -> v3: daily notes (fast capture pad: many notes per day, markdown body)
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS notes (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          date TEXT NOT NULL,
+          title TEXT NOT NULL DEFAULT '',
+          body TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notes_user_date ON notes(user_id, date);
+        """)
+        _set_schema_version(conn, 3)
+        version = 3
+
     return version

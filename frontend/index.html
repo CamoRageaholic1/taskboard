@@ -866,6 +866,35 @@
     background-position: right center;
   }
   select.field-select option { background: var(--surface); color: var(--ink); }
+
+  /* Markdown render in note cards */
+  .markdown-body h1, .markdown-body h2, .markdown-body h3 {
+    font-family: 'Fraunces', serif; font-weight: 600; margin: 12px 0 6px;
+  }
+  .markdown-body h1 { font-size: 22px; }
+  .markdown-body h2 { font-size: 18px; }
+  .markdown-body h3 { font-size: 15px; color: var(--ink-2); }
+  .markdown-body p { margin: 6px 0; }
+  .markdown-body ul, .markdown-body ol { margin: 6px 0 6px 22px; }
+  .markdown-body li { margin: 2px 0; }
+  .markdown-body code {
+    font-family: 'IBM Plex Mono', monospace; font-size: 12.5px;
+    background: var(--surface-2); padding: 1px 5px; border-radius: 4px;
+  }
+  .markdown-body pre {
+    background: var(--surface-2); padding: 10px 12px; border-radius: 6px;
+    overflow-x: auto; margin: 8px 0; font-size: 12.5px;
+  }
+  .markdown-body pre code { background: transparent; padding: 0; }
+  .markdown-body blockquote {
+    border-left: 3px solid var(--border-strong); padding-left: 12px; margin: 8px 0;
+    color: var(--ink-2);
+  }
+  .markdown-body a { color: var(--accent); }
+  .markdown-body hr { border: none; border-top: 1px solid var(--border); margin: 14px 0; }
+  .markdown-body table { border-collapse: collapse; margin: 8px 0; }
+  .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 4px 8px; }
+  .markdown-body img { max-width: 100%; border-radius: 6px; }
 </style>
 </head>
 <body>
@@ -874,6 +903,7 @@
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
@@ -1145,6 +1175,7 @@ function CommandPalette({ data, onClose, onAction }) {
     const list = [];
     list.push({ kind: 'view', id: 'view-today', label: 'Go to Today', hint: 'View', action: { type: 'view', view: 'today' } });
     list.push({ kind: 'view', id: 'view-all', label: 'Go to All Tasks', hint: 'View', action: { type: 'view', view: 'all' } });
+    list.push({ kind: 'view', id: 'view-notes', label: 'Go to Daily Notes', hint: 'View', action: { type: 'view', view: 'notes' } });
     data.projects.forEach(p => {
       list.push({ kind: 'project', id: 'p-' + p.id, label: p.name, hint: 'Project', color: p.color, action: { type: 'project', id: p.id } });
     });
@@ -1290,6 +1321,10 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
           <span className="nav-item-label">All Tasks</span>
           <span className="nav-item-count">{totals.all}</span>
         </div>
+        <div className={`nav-item ${data.activeView === 'notes' ? 'active' : ''}`} onClick={() => setView('notes')}>
+          <Icon.Edit size={13}/>
+          <span className="nav-item-label">Daily Notes</span>
+        </div>
       </div>
 
       <div className="sidebar-section">
@@ -1414,6 +1449,211 @@ function SubtaskItem({ st, onToggle, onChange, onDelete, onEnter }) {
       />
       <button className="icon-btn subtask-delete" onClick={onDelete}><Icon.X size={12}/></button>
     </div>
+  );
+}
+
+function NoteCard({ note, onChange, onDelete }) {
+  const [title, setTitle] = useState(note.title);
+  const [body, setBody] = useState(note.body);
+  const [mode, setMode] = useState('edit'); // 'edit' | 'preview'
+  const saveTimer = useRef(null);
+  const lastSaved = useRef({ title: note.title, body: note.body });
+
+  useEffect(() => {
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (title === lastSaved.current.title && body === lastSaved.current.body) return;
+    saveTimer.current = setTimeout(async () => {
+      const patch = {};
+      if (title !== lastSaved.current.title) patch.title = title;
+      if (body !== lastSaved.current.body) patch.body = body;
+      try {
+        const r = await fetch(`/api/notes/${note.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        if (r.ok) {
+          lastSaved.current = { title, body };
+          onChange?.(await r.json());
+        }
+      } catch (e) {}
+    }, 400);
+    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
+  }, [title, body]);
+
+  const rendered = useMemo(() => {
+    if (typeof marked === 'undefined') return body;
+    try { return marked.parse(body || '*(empty)*', { breaks: true, gfm: true, mangle: false, headerIds: false }); }
+    catch (e) { return body; }
+  }, [body, mode]);
+
+  return (
+    <div style={{
+      background: 'var(--surface)',
+      border: '1px solid var(--border)',
+      borderRadius: 10,
+      marginBottom: 14,
+      overflow: 'hidden',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+        <input
+          value={title}
+          onChange={(e) => setTitle(e.target.value)}
+          placeholder="Untitled note"
+          style={{
+            flex: 1, background: 'transparent', border: 'none', outline: 'none',
+            font: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--ink)',
+          }}
+        />
+        <button
+          className="add-subtask"
+          onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
+          style={{ padding: '4px 10px', fontSize: 11 }}
+        >
+          {mode === 'edit' ? 'Preview' : 'Edit'}
+        </button>
+        <button className="icon-btn" title="Delete note" onClick={onDelete}><Icon.Trash size={13}/></button>
+      </div>
+      {mode === 'edit' ? (
+        <textarea
+          value={body}
+          onChange={(e) => setBody(e.target.value)}
+          placeholder="Markdown supported — # headings, **bold**, lists, links, `code`…"
+          spellCheck={false}
+          style={{
+            width: '100%', minHeight: 120, padding: '12px 14px',
+            background: 'transparent', border: 'none', outline: 'none', resize: 'vertical',
+            font: '13px "IBM Plex Mono", monospace', color: 'var(--ink)', lineHeight: 1.55,
+          }}
+        />
+      ) : (
+        <div
+          className="markdown-body"
+          style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink)', lineHeight: 1.55 }}
+          dangerouslySetInnerHTML={{ __html: rendered }}
+        />
+      )}
+    </div>
+  );
+}
+
+function NotesView() {
+  const [date, setDate] = useState(todayStr());
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async (d) => {
+    setLoading(true);
+    try {
+      const r = await fetch(`/api/notes?date=${d}`, { cache: 'no-store' });
+      if (r.status === 401) { location.replace('/login.html'); return; }
+      if (r.ok) setNotes(await r.json());
+    } catch (e) {}
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { load(date); }, [date, load]);
+
+  const shiftDay = (delta) => {
+    const d = new Date(date + 'T00:00:00');
+    d.setDate(d.getDate() + delta);
+    setDate(d.toISOString().slice(0, 10));
+  };
+
+  const addNote = async () => {
+    try {
+      const r = await fetch('/api/notes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ date, title: '', body: '' }),
+      });
+      if (r.ok) {
+        const created = await r.json();
+        setNotes(prev => [...prev, created]);
+        setTimeout(() => {
+          const cards = document.querySelectorAll('.notes-list input');
+          cards[cards.length - 1]?.focus();
+        }, 50);
+      }
+    } catch (e) {}
+  };
+
+  const removeNote = async (id) => {
+    if (!confirm('Delete this note?')) return;
+    try {
+      const r = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
+      if (r.ok) setNotes(prev => prev.filter(n => n.id !== id));
+    } catch (e) {}
+  };
+
+  const updateNote = (n) => setNotes(prev => prev.map(x => x.id === n.id ? n : x));
+
+  const todayLabel = (() => {
+    const t = todayStr();
+    if (date === t) return 'Today';
+    const y = new Date(t + 'T00:00:00'); y.setDate(y.getDate() - 1);
+    if (date === y.toISOString().slice(0, 10)) return 'Yesterday';
+    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  })();
+
+  return (
+    <main className="main">
+      <header className="main-header">
+        <div className="header-left">
+          <div className="breadcrumb"><Icon.Edit size={11}/> Daily Notes</div>
+          <div className="project-title-input" style={{ pointerEvents: 'none' }}>
+            {todayLabel} <span style={{ color: 'var(--ink-3)', fontWeight: 400, fontSize: 14 }}>· {date}</span>
+          </div>
+          <div className="project-meta">
+            <span className="meta-pill">{notes.length} note{notes.length === 1 ? '' : 's'}</span>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="add-subtask" onClick={() => shiftDay(-1)}>← Prev</button>
+          <button className="add-subtask" onClick={() => setDate(todayStr())}>Today</button>
+          <button className="add-subtask" onClick={() => shiftDay(1)}>Next →</button>
+          <input
+            type="date"
+            value={date}
+            onChange={(e) => e.target.value && setDate(e.target.value)}
+            style={{
+              padding: '5px 8px', background: 'var(--surface-2)', border: '1px solid var(--border)',
+              borderRadius: 6, color: 'var(--ink)', font: 'inherit', fontSize: 12,
+            }}
+          />
+        </div>
+      </header>
+      <div className="main-content notes-list" style={{ padding: 24, overflowY: 'auto' }}>
+        <div style={{ maxWidth: 820, margin: '0 auto' }}>
+          {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>Loading…</div>}
+          {!loading && notes.length === 0 && (
+            <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>
+              No notes for {todayLabel.toLowerCase()}. Click "+ New note" to start capturing.
+            </div>
+          )}
+          {notes.map(n => (
+            <NoteCard
+              key={n.id}
+              note={n}
+              onChange={updateNote}
+              onDelete={() => removeNote(n.id)}
+            />
+          ))}
+          <button
+            onClick={addNote}
+            style={{
+              width: '100%', padding: '14px',
+              background: 'var(--surface-2)', border: '1px dashed var(--border-strong)',
+              borderRadius: 10, cursor: 'pointer',
+              color: 'var(--ink-2)', font: 'inherit', fontSize: 13,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+            }}
+          >
+            <Icon.Plus size={13}/> New note
+          </button>
+        </div>
+      </div>
+    </main>
   );
 }
 
@@ -2316,12 +2556,15 @@ function App() {
         user={user}
         onLogout={handleLogout}
       />
-      <MainView
-        data={data}
-        setData={setData}
-        newTaskTrigger={newTaskRequestRef.current}
-        focusSearchTrigger={focusSearchRef.current}
-      />
+      {data.activeView === 'notes'
+        ? <NotesView/>
+        : <MainView
+            data={data}
+            setData={setData}
+            newTaskTrigger={newTaskRequestRef.current}
+            focusSearchTrigger={focusSearchRef.current}
+          />
+      }
       <input
         ref={importInputRef}
         type="file"

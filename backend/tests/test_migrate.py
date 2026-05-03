@@ -1,16 +1,20 @@
 import sqlite3
 
 
-def test_v1_then_v2_idempotent(tmp_path):
+def test_migrate_brings_fresh_db_to_latest_idempotently(tmp_path):
     from migrate import migrate
     db = tmp_path / "fresh.db"
     conn = sqlite3.connect(db, isolation_level=None)
-    assert migrate(conn) == 2
-    # Second call should be no-op
-    assert migrate(conn) == 2
+    v = migrate(conn)
+    assert v >= 2
+    # Second call should be a no-op and return the same version
+    assert migrate(conn) == v
+    # Schema sanity
     cols = {r[1] for r in conn.execute("PRAGMA table_info(state)")}
     assert "user_id" in cols
     assert "id" not in cols
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    assert {"users", "state", "attachments", "backups", "notes", "meta"} <= tables
     conn.close()
 
 
