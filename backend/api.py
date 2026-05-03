@@ -1,11 +1,13 @@
 """Taskboard API — multi-user state, attachments, backups; SQLite + content-addressed file store."""
 import hashlib
+import io
 import json
 import os
 import re
 import secrets
 import sqlite3
 import tempfile
+import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -485,6 +487,78 @@ def delete_note(note_id):
         if cur.rowcount == 0:
             return jsonify(error="not found"), 404
     return jsonify(ok=True)
+
+
+def _markdown_for_day(date: str, rows) -> str:
+    """Render a list of (id,title,body,created_at,updated_at) note rows for one day."""
+    out = [f"# Notes — {date}", ""]
+    if not rows:
+        out.append("_(no notes)_")
+        return "\n".join(out) + "\n"
+    for i, (_nid, title, body, created_at, _updated_at) in enumerate(rows):
+        if i > 0:
+            out.append("---")
+            out.append("")
+        out.append(f"## {title or 'Untitled'}")
+        out.append(f"*created {created_at}*")
+        out.append("")
+        if body:
+            out.append(body.rstrip())
+        out.append("")
+    return "\n".join(out) + "\n"
+
+
+@APP.get("/api/notes/export")
+@require_user
+def export_notes_day():
+    date = request.args.get("date") or _today_iso()
+    if not _DATE_RE.match(date):
+        return jsonify(error="date must be YYYY-MM-DD"), 400
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id,title,body,created_at,updated_at FROM notes "
+            "WHERE user_id=? AND date=? ORDER BY created_at",
+            (uid, date),
+        ).fetchall()
+    body = _markdown_for_day(date, rows)
+    return body, 200, {
+        "Content-Type": "text/markdown; charset=utf-8",
+        "Content-Disposition": f'attachment; filename="notes-{date}.md"',
+    }
+
+
+@APP.get("/api/notes/export.zip")
+@require_user
+def export_notes_zip():
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT date, id, title, body, created_at, updated_at FROM notes "
+            "WHERE user_id=? ORDER BY date, created_at",
+            (uid,),
+        ).fetchall()
+    by_date: dict[str, list] = {}
+    for date, nid, title, body, created_at, updated_at in rows:
+        by_date.setdefault(date, []).append((nid, title, body, created_at, updated_at))
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        # Always include a README so an empty zip isn't broken
+        zf.writestr(
+            "README.md",
+            f"# Taskboard notes export\n\n"
+            f"Exported {now_iso()}.\n"
+            f"Files: one per date, format YYYY-MM-DD.md.\n"
+            f"Total dates: {len(by_date)}.\n",
+        )
+        for date, day_rows in by_date.items():
+            zf.writestr(f"notes/{date}.md", _markdown_for_day(date, day_rows))
+    buf.seek(0)
+    stamp = datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
+    return buf.getvalue(), 200, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": f'attachment; filename="taskboard-notes-{stamp}.zip"',
+    }
 
 
 # ---------- 2FA (TOTP) setup / enable / disable ----------
