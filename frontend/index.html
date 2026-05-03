@@ -904,7 +904,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
@@ -1310,7 +1310,7 @@ function ThemeToggle({ theme, setTheme }) {
   );
 }
 
-function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick, user, onLogout }) {
+function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick, user, onLogout, onOpenPalette, onOpenHelp }) {
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState('');
   const [dragProjectId, setDragProjectId] = useState(null);
@@ -1366,6 +1366,38 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
       <div className="sidebar-header">
         <div className="brand"><span className="brand-mark">◆</span> Tasks</div>
         <ThemeToggle theme={theme} setTheme={setTheme}/>
+      </div>
+      <div style={{
+        padding: '8px 16px 4px', display: 'flex', gap: 6, alignItems: 'center',
+        fontSize: 11, color: 'var(--ink-3)',
+      }}>
+        <button
+          onClick={onOpenPalette}
+          title="Open command palette"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6, flex: 1,
+            padding: '6px 10px', background: 'var(--surface-2)',
+            border: '1px solid var(--border)', borderRadius: 6,
+            color: 'var(--ink-2)', font: 'inherit', fontSize: 12, cursor: 'pointer',
+            justifyContent: 'space-between',
+          }}
+        >
+          <span>Search & jump</span>
+          <kbd style={{
+            fontFamily: 'IBM Plex Mono, monospace', fontSize: 10,
+            background: 'var(--bg)', border: '1px solid var(--border)',
+            borderRadius: 3, padding: '1px 5px', color: 'var(--ink-3)',
+          }}>⌘K</kbd>
+        </button>
+        <button
+          onClick={onOpenHelp}
+          title="Keyboard shortcuts (?)"
+          style={{
+            width: 30, height: 30, border: '1px solid var(--border)',
+            background: 'var(--surface-2)', borderRadius: 6, color: 'var(--ink-3)',
+            cursor: 'pointer', font: 'inherit', fontSize: 12,
+          }}
+        >?</button>
       </div>
 
       <div className="sidebar-section">
@@ -1803,12 +1835,51 @@ function Attachments({ taskId }) {
   );
 }
 
+function ShortcutsModal({ onClose }) {
+  const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
+  const meta = isMac ? '⌘' : 'Ctrl';
+  const rows = [
+    [`${meta} K`, 'Open command palette (search, jump to project, fire actions)'],
+    ['/', 'Focus the in-page search box'],
+    ['N', 'New task in current project'],
+    ['T', 'Go to Today view'],
+    ['A', 'Go to All Tasks view'],
+    ['Esc', 'Close palette / collapse expanded task'],
+    ['?', 'Show this help'],
+  ];
+  return (
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>Keyboard shortcuts</div>
+          <button className="icon-btn" onClick={onClose}><Icon.X size={14}/></button>
+        </div>
+        <div style={{ padding: 6 }}>
+          {rows.map(([key, label]) => (
+            <div key={key} style={{
+              display: 'flex', alignItems: 'center', gap: 16,
+              padding: '8px 14px', borderRadius: 6,
+            }}>
+              <kbd style={{
+                fontFamily: 'IBM Plex Mono, monospace', fontSize: 12,
+                background: 'var(--surface-2)', border: '1px solid var(--border)',
+                borderRadius: 4, padding: '2px 8px', color: 'var(--ink)',
+                minWidth: 56, textAlign: 'center',
+              }}>{key}</kbd>
+              <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{label}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TwoFactorModal({ onClose }) {
   const [enabled, setEnabled] = useState(null);     // null = loading
   const [setup, setSetup] = useState(null);          // { secret, uri } during enrollment
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
-  const qrRef = useRef(null);
   const toast = (m) => { try { window.__taskboardToast?.(m); } catch (e) {} };
 
   const refresh = async () => {
@@ -1819,10 +1890,14 @@ function TwoFactorModal({ onClose }) {
   };
   useEffect(() => { refresh(); }, []);
 
-  useEffect(() => {
-    if (setup?.uri && qrRef.current && typeof QRCode !== 'undefined') {
-      QRCode.toCanvas(qrRef.current, setup.uri, { width: 200, margin: 1 }, () => {});
-    }
+  const qrSvg = useMemo(() => {
+    if (!setup?.uri || typeof qrcode === 'undefined') return '';
+    try {
+      const q = qrcode(0, 'M');
+      q.addData(setup.uri);
+      q.make();
+      return q.createSvgTag({ cellSize: 5, margin: 2, scalable: true });
+    } catch (e) { return ''; }
   }, [setup]);
 
   const startSetup = async () => {
@@ -1890,7 +1965,11 @@ function TwoFactorModal({ onClose }) {
                 Scan this QR with your authenticator app, or enter the secret manually.
               </p>
               <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 14 }}>
-                <canvas ref={qrRef} style={{ background: 'white', padding: 8, borderRadius: 6 }}/>
+                <div
+                  style={{ background: 'white', padding: 8, borderRadius: 6, width: 200, height: 200,
+                           display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  dangerouslySetInnerHTML={{ __html: qrSvg || '<span style="color:#999;font-size:11px">QR loading…</span>' }}
+                />
                 <div style={{ flex: 1 }}>
                   <div style={{ color: 'var(--ink-3)', fontSize: 11, marginBottom: 4 }}>Secret</div>
                   <code style={{
@@ -2739,6 +2818,7 @@ function App() {
   const [backupsOpen, setBackupsOpen] = useState(false);
   const [feedOpen, setFeedOpen] = useState(false);
   const [twoFAOpen, setTwoFAOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const [notesInitialDate, setNotesInitialDate] = useState(null);
   const newTaskRequestRef = useRef(0);
   const focusSearchRef = useRef(0);
@@ -2800,6 +2880,7 @@ function App() {
       if (e.key === 'Escape' && paletteOpen) { setPaletteOpen(false); return; }
       if (isTyping) return;
       if (e.key === '/') { e.preventDefault(); requestFocusSearch(); }
+      else if (e.key === '?') { e.preventDefault(); setHelpOpen(true); }
       else if (e.key.toLowerCase() === 'n') { e.preventDefault(); requestNewTask(); }
       else if (e.key.toLowerCase() === 't') { e.preventDefault(); setData(d => ({ ...d, activeView: 'today' })); }
       else if (e.key.toLowerCase() === 'a') { e.preventDefault(); setData(d => ({ ...d, activeView: 'all' })); }
@@ -2830,6 +2911,8 @@ function App() {
         onImportClick={() => importInputRef.current?.click()}
         user={user}
         onLogout={handleLogout}
+        onOpenPalette={() => setPaletteOpen(true)}
+        onOpenHelp={() => setHelpOpen(true)}
       />
       {data.activeView === 'notes'
         ? <NotesView initialDate={notesInitialDate}/>
@@ -2856,6 +2939,7 @@ function App() {
       {backupsOpen && <BackupsModal onClose={() => setBackupsOpen(false)} onRestore={(d) => setData(d)}/>}
       {feedOpen && <CalendarFeedModal onClose={() => setFeedOpen(false)}/>}
       {twoFAOpen && <TwoFactorModal onClose={() => setTwoFAOpen(false)}/>}
+      {helpOpen && <ShortcutsModal onClose={() => setHelpOpen(false)}/>}
     </>
   );
 }
