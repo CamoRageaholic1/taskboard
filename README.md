@@ -72,6 +72,8 @@ Minimum 8 characters, must include at least one uppercase, one lowercase, and on
 | GET    | `/api/calendar/<token>.ics`   | none*  | iCal feed of open due-dated tasks (token IS the auth) |
 | GET    | `/api/notes?date=YYYY-MM-DD`  | user   | list this user's notes for that day (default: today) |
 | GET    | `/api/notes/dates`            | user   | dates with notes (recent 365) |
+| GET    | `/api/notes/export?date=YYYY-MM-DD` | user | one day's notes as a Markdown file (default: today) |
+| GET    | `/api/notes/export.zip`       | user   | all notes as a zip — one .md per date + a README |
 | POST   | `/api/notes`                  | user   | create note `{title, body, date?}` |
 | PATCH  | `/api/notes/<id>`             | user   | update title / body / date    |
 | DELETE | `/api/notes/<id>`             | user   | remove                        |

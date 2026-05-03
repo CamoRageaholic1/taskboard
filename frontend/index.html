@@ -1208,6 +1208,7 @@ function CommandPalette({ data, onClose, onAction }) {
     list.push({ kind: 'action', id: 'a-restore', label: 'Browse server snapshots…', hint: 'Action', action: { type: 'restore' } });
     list.push({ kind: 'action', id: 'a-feed', label: 'Calendar feed (iCal subscription)…', hint: 'Action', action: { type: 'feed' } });
     list.push({ kind: 'action', id: 'a-2fa', label: 'Two-factor authentication…', hint: 'Action', action: { type: '2fa' } });
+    list.push({ kind: 'action', id: 'a-export-notes', label: 'Export all notes (.zip of .md)', hint: 'Action', action: { type: 'export-notes' } });
     list.push({ kind: 'action', id: 'a-theme', label: 'Toggle dark mode', hint: 'Action', action: { type: 'theme' } });
 
     let local = q ? list.filter(i => i.label.toLowerCase().includes(q)) : list;
@@ -1716,6 +1717,14 @@ function NotesView({ initialDate }) {
               borderRadius: 6, color: 'var(--ink)', font: 'inherit', fontSize: 12,
             }}
           />
+          <a
+            className="add-subtask"
+            href={`/api/notes/export?date=${date}`}
+            title="Download this day as Markdown"
+            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+          >
+            <Icon.Download size={11}/> .md
+          </a>
         </div>
       </header>
       <div className="main-content notes-list" style={{ padding: 24, overflowY: 'auto' }}>
@@ -2846,6 +2855,7 @@ function App() {
     else if (action.type === 'restore') setBackupsOpen(true);
     else if (action.type === 'feed') setFeedOpen(true);
     else if (action.type === '2fa') setTwoFAOpen(true);
+    else if (action.type === 'export-notes') { window.location.href = '/api/notes/export.zip'; }
     else if (action.type === 'theme') setTheme(t => t === 'light' ? 'dark' : 'light');
   };
 
