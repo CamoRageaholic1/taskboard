@@ -450,6 +450,91 @@ def delete_note(note_id):
     return jsonify(ok=True)
 
 
+# ---------- search (across this user's projects/tasks/subtasks/notes) ----------
+
+def _snippet(text: str, q: str, before: int = 40, after: int = 100) -> str:
+    if not text:
+        return ""
+    low = text.lower()
+    idx = low.find(q.lower())
+    if idx < 0:
+        return text[: before + after]
+    start = max(0, idx - before)
+    return ("…" if start > 0 else "") + text[start: idx + len(q) + after]
+
+
+@APP.get("/api/search")
+@require_user
+def search():
+    q = (request.args.get("q") or "").strip()
+    if len(q) < 2:
+        return jsonify(results=[])
+    qlow = q.lower()
+    uid = current_user_id()
+    results: list = []
+
+    with db() as conn:
+        state_row = conn.execute("SELECT data FROM state WHERE user_id=?", (uid,)).fetchone()
+        note_rows = conn.execute(
+            "SELECT id,date,title,body FROM notes WHERE user_id=? "
+            "AND (LOWER(title) LIKE ? OR LOWER(body) LIKE ?) "
+            "ORDER BY date DESC LIMIT 100",
+            (uid, f"%{qlow}%", f"%{qlow}%"),
+        ).fetchall()
+
+    if state_row:
+        try:
+            state = json.loads(state_row[0])
+        except json.JSONDecodeError:
+            state = {}
+        for p in state.get("projects", []):
+            pname = p.get("name", "")
+            if qlow in pname.lower():
+                results.append({
+                    "kind": "project", "id": p.get("id"),
+                    "title": pname, "snippet": "",
+                })
+            for t in p.get("tasks", []):
+                title = t.get("title", "") or ""
+                desc = t.get("description", "") or ""
+                if qlow in title.lower() or qlow in desc.lower():
+                    results.append({
+                        "kind": "task",
+                        "id": t.get("id"),
+                        "project_id": p.get("id"),
+                        "project_name": pname,
+                        "title": title or "Untitled",
+                        "snippet": _snippet(desc, q),
+                        "completed": bool(t.get("completed")),
+                        "due_date": t.get("dueDate", ""),
+                    })
+                for st in t.get("subtasks", []):
+                    sttitle = st.get("title", "") or ""
+                    if qlow in sttitle.lower():
+                        results.append({
+                            "kind": "subtask",
+                            "id": st.get("id"),
+                            "task_id": t.get("id"),
+                            "project_id": p.get("id"),
+                            "project_name": pname,
+                            "title": sttitle,
+                            "parent_title": title or "Untitled",
+                        })
+
+    for r in note_rows:
+        body = r[3] or ""
+        title = r[2] or ""
+        results.append({
+            "kind": "note",
+            "id": r[0],
+            "date": r[1],
+            "title": title or "Untitled note",
+            "snippet": _snippet(body, q),
+        })
+
+    return jsonify(results=results[:200])
+
+
 # ---------- users (admin) ----------
 
 @APP.get("/api/users")
