@@ -1,0 +1,2318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Board</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --surface: #fbfaf6;
+    --surface-2: #efece4;
+    --border: #e2ddd0;
+    --border-strong: #c9c2b0;
+    --ink: #1c1b18;
+    --ink-2: #4a4842;
+    --ink-3: #807c70;
+    --ink-4: #b3ac9c;
+    --accent: #c1542a;
+    --accent-soft: #e8a682;
+    --accent-bg: #f5e2d4;
+    --danger: #b04030;
+    --success: #5c7a3a;
+    --warning: #b88820;
+    --shadow-sm: 0 1px 0 rgba(28,27,24,0.04), 0 1px 2px rgba(28,27,24,0.04);
+    --shadow-md: 0 4px 12px rgba(28,27,24,0.06), 0 1px 3px rgba(28,27,24,0.04);
+    --shadow-lg: 0 12px 32px rgba(28,27,24,0.10), 0 2px 6px rgba(28,27,24,0.05);
+  }
+  [data-theme="dark"] {
+    --bg: #14130f;
+    --surface: #1c1b17;
+    --surface-2: #25241f;
+    --border: #2e2c26;
+    --border-strong: #43413a;
+    --ink: #f1ede1;
+    --ink-2: #c5c0b1;
+    --ink-3: #8a8676;
+    --ink-4: #5a5749;
+    --accent: #e87a4a;
+    --accent-soft: #c1542a;
+    --accent-bg: #38221a;
+    --danger: #d96050;
+    --success: #8aa860;
+    --warning: #d9a840;
+    --shadow-sm: 0 1px 0 rgba(0,0,0,0.3), 0 1px 2px rgba(0,0,0,0.2);
+    --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.25);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    font-size: 14px;
+    line-height: 1.5;
+    overflow: hidden;
+    transition: background 0.2s ease, color 0.2s ease;
+  }
+  .app {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .sidebar-header {
+    padding: 24px 20px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .brand {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 20px;
+    letter-spacing: -0.01em;
+    color: var(--ink);
+  }
+  .brand-mark {
+    color: var(--accent);
+    margin-right: 2px;
+  }
+  .theme-toggle {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    color: var(--ink-2);
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: all 0.15s;
+  }
+  .theme-toggle:hover { color: var(--ink); border-color: var(--border-strong); }
+
+  .sidebar-section {
+    padding: 16px 12px 4px;
+    flex-shrink: 0;
+  }
+  .section-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+    padding: 4px 8px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .section-label .count {
+    color: var(--ink-4);
+    font-weight: 400;
+  }
+
+  .sidebar-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 0 12px;
+    min-height: 0;
+  }
+  .sidebar-list::-webkit-scrollbar { width: 6px; }
+  .sidebar-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--ink-2);
+    font-size: 13px;
+    font-weight: 500;
+    transition: background 0.12s;
+    user-select: none;
+  }
+  .nav-item:hover { background: var(--surface-2); color: var(--ink); }
+  .nav-item.active { background: var(--surface-2); color: var(--ink); }
+  .nav-item.active .nav-dot { background: var(--accent); }
+  .nav-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--ink-4);
+    flex-shrink: 0;
+  }
+  .nav-item-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-item-count {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+
+  .project-item {
+    position: relative;
+  }
+  .project-item .project-actions {
+    opacity: 0;
+    display: flex;
+    gap: 2px;
+    transition: opacity 0.15s;
+  }
+  .project-item:hover .project-actions { opacity: 1; }
+  .icon-btn {
+    background: transparent;
+    border: none;
+    color: var(--ink-3);
+    width: 22px; height: 22px;
+    border-radius: 5px;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: all 0.12s;
+  }
+  .icon-btn:hover { background: var(--border); color: var(--ink); }
+
+  .add-project {
+    margin: 4px 0 12px;
+    padding: 8px 10px;
+    border: 1px dashed var(--border-strong);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--ink-3);
+    font-family: inherit;
+    font-size: 13px;
+    width: calc(100% - 24px);
+    margin-left: 12px;
+    cursor: pointer;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: all 0.15s;
+  }
+  .add-project:hover { color: var(--ink); border-color: var(--ink-3); background: var(--surface-2); }
+
+  .sidebar-footer {
+    padding: 12px 20px;
+    border-top: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-4);
+    letter-spacing: 0.05em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .sidebar-footer .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--success);
+    display: inline-block;
+    margin-right: 6px;
+    box-shadow: 0 0 0 2px var(--surface);
+  }
+
+  /* ---------- Main ---------- */
+  .main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .main-header {
+    padding: 24px 40px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    flex-shrink: 0;
+  }
+  .header-left { min-width: 0; flex: 1; }
+  .breadcrumb {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .project-title-input {
+    font-family: 'Fraunces', serif;
+    font-weight: 600;
+    font-size: 32px;
+    letter-spacing: -0.02em;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0;
+    line-height: 1.2;
+  }
+  .project-meta {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-top: 8px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-3);
+  }
+  .meta-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .meta-pill strong { color: var(--ink); font-weight: 500; }
+
+  .header-right {
+    display: flex;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .btn {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 8px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--ink);
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .btn:hover { border-color: var(--border-strong); }
+  .btn-primary {
+    background: var(--ink);
+    color: var(--bg);
+    border-color: var(--ink);
+  }
+  .btn-primary:hover { background: var(--ink-2); border-color: var(--ink-2); }
+  [data-theme="dark"] .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #1a0e08;
+  }
+  [data-theme="dark"] .btn-primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+
+  /* ---------- Toolbar ---------- */
+  .toolbar {
+    padding: 14px 40px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .filter-tab {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    padding: 6px 10px;
+    border-radius: 6px;
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--ink-3);
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .filter-tab:hover { color: var(--ink-2); }
+  .filter-tab.active { color: var(--ink); background: var(--surface-2); border-color: var(--border); }
+  .filter-tab .num { color: var(--ink-4); margin-left: 6px; }
+  .filter-tab.active .num { color: var(--accent); }
+  .toolbar-spacer { flex: 1; }
+  .search-input {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--ink);
+    width: 200px;
+    transition: all 0.15s;
+  }
+  .search-input::placeholder { color: var(--ink-4); }
+  .search-input:focus { outline: none; border-color: var(--ink-3); }
+
+  /* ---------- Task List ---------- */
+  .task-canvas {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px 40px 80px;
+    min-height: 0;
+  }
+  .task-canvas::-webkit-scrollbar { width: 8px; }
+  .task-canvas::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--ink-3);
+  }
+  .empty-state h3 {
+    font-family: 'Fraunces', serif;
+    font-weight: 400;
+    font-size: 22px;
+    color: var(--ink-2);
+    margin-bottom: 8px;
+  }
+  .empty-state p {
+    font-size: 13px;
+    margin-bottom: 20px;
+  }
+
+  .task {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    transition: all 0.18s;
+    overflow: hidden;
+  }
+  .task:hover { border-color: var(--border-strong); box-shadow: var(--shadow-sm); }
+  .task.completed { opacity: 0.55; }
+  .task.completed .task-title { text-decoration: line-through; color: var(--ink-3); }
+  .task.expanded { box-shadow: var(--shadow-md); border-color: var(--border-strong); }
+
+  .task-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+  }
+  .task-checkbox {
+    width: 20px; height: 20px;
+    border: 1.5px solid var(--ink-4);
+    border-radius: 6px;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    transition: all 0.15s;
+    background: transparent;
+  }
+  .task-checkbox:hover { border-color: var(--ink-2); }
+  .task-checkbox.checked {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg);
+  }
+  [data-theme="dark"] .task-checkbox.checked {
+    background: var(--accent); border-color: var(--accent); color: #1a0e08;
+  }
+  .task-checkbox.checked svg { display: block; }
+  .task-checkbox svg { display: none; width: 12px; height: 12px; }
+
+  .task-main {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .task-title {
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink);
+    line-height: 1.4;
+  }
+  .task-title-input {
+    font-family: inherit;
+    font-size: 14.5px;
+    font-weight: 500;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    outline: none;
+    width: 100%;
+    padding: 0;
+  }
+  .task-meta {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10.5px;
+    color: var(--ink-3);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .task-meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .task-meta-item.overdue { color: var(--danger); }
+  .task-meta-item.due-soon { color: var(--warning); }
+  .task-meta-item.completed-meta { color: var(--success); }
+
+  .priority-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .priority-high { background: var(--danger); }
+  .priority-med { background: var(--warning); }
+  .priority-low { background: var(--ink-4); }
+
+  .task-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+  .task:hover .task-actions, .task.expanded .task-actions { opacity: 1; }
+
+  .expand-chevron {
+    color: var(--ink-3);
+    transition: transform 0.2s;
+    flex-shrink: 0;
+  }
+  .task.expanded .expand-chevron { transform: rotate(90deg); }
+
+  /* ---------- Task expanded body ---------- */
+  .task-body {
+    border-top: 1px solid var(--border);
+    padding: 16px 16px 18px 50px;
+    display: none;
+    background: var(--surface);
+  }
+  .task.expanded .task-body { display: block; }
+
+  .body-section {
+    margin-bottom: 18px;
+  }
+  .body-section:last-child { margin-bottom: 0; }
+  .body-label {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--ink-3);
+    margin-bottom: 8px;
+  }
+
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .field {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .field input, .field select {
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--ink);
+    cursor: pointer;
+  }
+  .field input[type="date"] { min-width: 120px; }
+  .field-icon { color: var(--ink-3); }
+
+  .description-textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    resize: vertical;
+    min-height: 60px;
+    line-height: 1.5;
+    transition: border-color 0.15s;
+  }
+  .description-textarea:focus { outline: none; border-color: var(--ink-3); }
+  .description-textarea::placeholder { color: var(--ink-4); }
+
+  /* Subtasks */
+  .subtask-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .subtask {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    transition: background 0.12s;
+  }
+  .subtask:hover { background: var(--bg); }
+  .subtask-checkbox {
+    width: 16px; height: 16px;
+    border: 1.5px solid var(--ink-4);
+    border-radius: 4px;
+    flex-shrink: 0;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    background: transparent;
+  }
+  .subtask-checkbox.checked {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--bg);
+  }
+  [data-theme="dark"] .subtask-checkbox.checked {
+    background: var(--accent); border-color: var(--accent); color: #1a0e08;
+  }
+  .subtask-checkbox svg { display: none; width: 10px; height: 10px; }
+  .subtask-checkbox.checked svg { display: block; }
+  .subtask-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: inherit;
+    font-size: 13px;
+    color: var(--ink);
+    padding: 2px 0;
+  }
+  .subtask.checked .subtask-input { text-decoration: line-through; color: var(--ink-3); }
+  .subtask-delete {
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .subtask:hover .subtask-delete { opacity: 1; }
+
+  .add-subtask {
+    background: transparent;
+    border: none;
+    color: var(--ink-3);
+    font-family: inherit;
+    font-size: 12.5px;
+    padding: 6px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 6px;
+    margin-top: 4px;
+  }
+  .add-subtask:hover { color: var(--ink); background: var(--bg); }
+
+  .subtask-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .progress-bar {
+    flex: 1;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    background: var(--accent);
+    transition: width 0.3s ease;
+  }
+  .progress-text {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+    flex-shrink: 0;
+  }
+
+  /* Add task input */
+  .add-task-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px dashed var(--border-strong);
+    border-radius: 12px;
+    margin-bottom: 10px;
+    transition: border-color 0.15s;
+  }
+  .add-task-row:focus-within { border-color: var(--ink-3); border-style: solid; }
+  .add-task-row .placeholder-circle {
+    width: 20px; height: 20px;
+    border: 1.5px dashed var(--ink-4);
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+  .add-task-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    outline: none;
+    font-family: inherit;
+    font-size: 14.5px;
+    color: var(--ink);
+    padding: 0;
+  }
+  .add-task-input::placeholder { color: var(--ink-4); }
+
+  /* Group headers */
+  .task-group-header {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: var(--ink-3);
+    margin: 22px 0 10px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .task-group-header:first-child { margin-top: 0; }
+  .task-group-header.urgent { color: var(--danger); }
+
+  /* Modal-style confirm */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(100px);
+    background: var(--ink);
+    color: var(--bg);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 13px;
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+
+  /* Command palette */
+  .palette-overlay {
+    position: fixed; inset: 0;
+    background: rgba(20, 19, 15, 0.4);
+    backdrop-filter: blur(2px);
+    display: grid;
+    place-items: start center;
+    padding-top: 12vh;
+    z-index: 200;
+    animation: fadeIn 0.12s ease;
+  }
+  [data-theme="dark"] .palette-overlay { background: rgba(0,0,0,0.55); }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .palette {
+    width: 560px;
+    max-width: 92vw;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+  .palette-input {
+    width: 100%;
+    padding: 16px 20px;
+    font-family: inherit;
+    font-size: 15px;
+    color: var(--ink);
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    outline: none;
+  }
+  .palette-input::placeholder { color: var(--ink-4); }
+  .palette-results {
+    max-height: 360px;
+    overflow-y: auto;
+    padding: 6px;
+  }
+  .palette-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--ink-2);
+    font-size: 13.5px;
+  }
+  .palette-item.selected { background: var(--surface-2); color: var(--ink); }
+  .palette-item .item-kind {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 9.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--ink-3);
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  .palette-item .item-label { flex: 1; }
+  .palette-item .item-hint {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-4);
+  }
+  .palette-footer {
+    padding: 8px 14px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    gap: 14px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-4);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .palette-footer kbd {
+    font-family: inherit;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-right: 4px;
+    color: var(--ink-3);
+  }
+
+  /* Drag handles + drop targets */
+  .drag-handle {
+    cursor: grab;
+    color: var(--ink-4);
+    width: 14px;
+    display: grid;
+    place-items: center;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .task:hover .drag-handle, .nav-item:hover .drag-handle { opacity: 1; }
+  .drag-handle:active { cursor: grabbing; }
+  .task.dragging, .nav-item.dragging { opacity: 0.4; }
+  .task.drop-above { border-top: 2px solid var(--accent); }
+  .task.drop-below { border-bottom: 2px solid var(--accent); }
+  .nav-item.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+  .nav-item.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+
+  /* Recurrence badge */
+  .recur-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--ink-3);
+  }
+
+  /* Inline rename input */
+  .rename-input {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--ink-3);
+    outline: none;
+    border-radius: 5px;
+    padding: 4px 6px;
+    width: 100%;
+  }
+
+  select.field-select {
+    appearance: none;
+    -webkit-appearance: none;
+    background: transparent;
+    border: none;
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    padding-right: 14px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23807c70' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right center;
+  }
+  select.field-select option { background: var(--surface); color: var(--ink); }
+</style>
+</head>
+<body>
+<div id="app" class="app"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+// ---------- Icons ----------
+const Icon = {
+  Sun: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>,
+  Moon: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>,
+  Plus: ({ size = 14 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+  Check: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+  Chevron: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
+  Calendar: () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  Flag: () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>,
+  Branch: () => <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>,
+  Trash: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>,
+  Edit: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
+  Inbox: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11L2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>,
+  Today: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="15" r="2" fill="currentColor"/></svg>,
+  Star: () => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
+  X: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+  Folder: () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>,
+  Download: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,
+  Upload: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
+  Drag: () => <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="8" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>,
+  Repeat: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
+};
+
+// ---------- Storage ----------
+const STORAGE_KEY = 'task-board-data-v1';
+const THEME_KEY = 'task-board-theme';
+
+const defaultData = () => ({
+  projects: [
+    {
+      id: 'p1',
+      name: 'Doc-Agent',
+      color: '#c1542a',
+      createdAt: Date.now() - 86400000 * 5,
+      tasks: [
+        {
+          id: 't1', title: 'Architecture spike for retrieval pipeline',
+          completed: false, priority: 'high',
+          dueDate: new Date(Date.now() + 86400000 * 2).toISOString().slice(0,10),
+          description: 'Compare hybrid search vs pure vector. Document tradeoffs and recommend a path forward.',
+          subtasks: [
+            { id: 's1', title: 'Benchmark BM25 + dense rerank', done: true },
+            { id: 's2', title: 'Test pgvector vs Qdrant on 100k corpus', done: false },
+            { id: 's3', title: 'Draft ADR-004 in /docs/adr', done: false },
+          ],
+        },
+        {
+          id: 't2', title: 'Wire up streaming responses to UI',
+          completed: false, priority: 'med',
+          dueDate: new Date(Date.now() + 86400000 * 7).toISOString().slice(0,10),
+          description: '',
+          subtasks: [
+            { id: 's4', title: 'SSE endpoint on backend', done: true },
+            { id: 's5', title: 'Token-by-token render in chat panel', done: false },
+          ],
+        },
+        {
+          id: 't3', title: 'Onboarding tour for first-run users',
+          completed: true, priority: 'low', dueDate: '', description: '',
+          subtasks: [],
+        },
+      ],
+    },
+    {
+      id: 'p2',
+      name: 'Cert App',
+      color: '#5c7a3a',
+      createdAt: Date.now() - 86400000 * 12,
+      tasks: [
+        {
+          id: 't4', title: 'Practice exam engine — question randomizer',
+          completed: false, priority: 'high',
+          dueDate: new Date(Date.now() + 86400000 * 4).toISOString().slice(0,10),
+          description: 'Should support weighted topic selection and avoid repeats within a session.',
+          subtasks: [
+            { id: 's6', title: 'Topic taxonomy schema', done: true },
+            { id: 's7', title: 'Weighted shuffle algorithm', done: false },
+            { id: 's8', title: 'Session memory in IndexedDB', done: false },
+            { id: 's9', title: 'Unit tests for distribution', done: false },
+          ],
+        },
+        {
+          id: 't5', title: 'Spaced repetition scheduling',
+          completed: false, priority: 'med', dueDate: '',
+          description: 'SM-2 variant; tune for short-form factual recall.',
+          subtasks: [
+            { id: 's10', title: 'Implement SM-2 core', done: false },
+            { id: 's11', title: 'Daily review queue UI', done: false },
+          ],
+        },
+      ],
+    },
+    {
+      id: 'p3',
+      name: 'SSOT for Github',
+      color: '#b88820',
+      createdAt: Date.now() - 86400000 * 3,
+      tasks: [
+        {
+          id: 't6', title: 'Define canonical metadata schema',
+          completed: false, priority: 'high',
+          dueDate: new Date(Date.now() + 86400000 * 1).toISOString().slice(0,10),
+          description: 'Repos, owners, lifecycle stage, compliance tags. JSON Schema in /spec.',
+          subtasks: [
+            { id: 's12', title: 'Draft schema v0.1', done: true },
+            { id: 's13', title: 'Review with platform team', done: false },
+            { id: 's14', title: 'Publish JSON Schema doc', done: false },
+          ],
+        },
+        {
+          id: 't7', title: 'Sync job: GH API → Postgres',
+          completed: false, priority: 'med', dueDate: '',
+          description: '',
+          subtasks: [
+            { id: 's15', title: 'Rate-limit handling with retry', done: false },
+            { id: 's16', title: 'Incremental sync via ETag', done: false },
+          ],
+        },
+        {
+          id: 't8', title: 'Audit dashboard for stale repos',
+          completed: false, priority: 'low', dueDate: '', description: '', subtasks: [],
+        },
+      ],
+    },
+    {
+      id: 'p4',
+      name: 'Personal',
+      color: '#6b5b8a',
+      createdAt: Date.now() - 86400000 * 30,
+      tasks: [
+        {
+          id: 't9', title: 'Renew passport',
+          completed: false, priority: 'med',
+          dueDate: new Date(Date.now() + 86400000 * 21).toISOString().slice(0,10),
+          description: '', subtasks: [
+            { id: 's17', title: 'Take new photo', done: false },
+            { id: 's18', title: 'Mail application', done: false },
+          ],
+        },
+        {
+          id: 't10', title: 'Bike tune-up before spring',
+          completed: false, priority: 'low', dueDate: '', description: '', subtasks: [],
+        },
+      ],
+    },
+  ],
+  activeProjectId: 'p1',
+  activeView: 'project', // 'project' | 'today' | 'all' | 'starred'
+});
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return defaultData();
+}
+async function fetchServerData() {
+  try {
+    const r = await fetch('/api/data', { cache: 'no-store' });
+    if (!r.ok) return null;
+    const j = await r.json();
+    return (j && j.data && Array.isArray(j.data.projects)) ? j.data : null;
+  } catch (e) { return null; }
+}
+let _saveTimer = null;
+let _lastPosted = '';
+function saveData(data) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(async () => {
+    const body = JSON.stringify({ data });
+    if (body === _lastPosted) return;
+    try {
+      const r = await fetch('/api/data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+      });
+      if (r.ok) _lastPosted = body;
+    } catch (e) {}
+  }, 500);
+}
+function loadTheme() {
+  return localStorage.getItem(THEME_KEY) || 'light';
+}
+function saveTheme(t) { localStorage.setItem(THEME_KEY, t); }
+
+// ---------- Helpers ----------
+const uid = () => Math.random().toString(36).slice(2, 10);
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+function formatDueDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr + 'T00:00:00');
+  const today = new Date(); today.setHours(0,0,0,0);
+  const diff = Math.round((d - today) / 86400000);
+  if (diff === 0) return { label: 'Today', state: 'due-soon' };
+  if (diff === 1) return { label: 'Tomorrow', state: 'due-soon' };
+  if (diff === -1) return { label: 'Yesterday', state: 'overdue' };
+  if (diff < 0) return { label: `${Math.abs(diff)}d overdue`, state: 'overdue' };
+  if (diff < 7) return { label: `In ${diff}d`, state: diff <= 2 ? 'due-soon' : '' };
+  const opts = { month: 'short', day: 'numeric' };
+  return { label: d.toLocaleDateString(undefined, opts), state: '' };
+}
+
+// ---------- Recurrence ----------
+const RECUR_OPTIONS = [
+  { value: 'none', label: 'Does not repeat' },
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekdays', label: 'Weekdays (Mon-Fri)' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Every 2 weeks' },
+  { value: 'monthly', label: 'Monthly' },
+  { value: 'yearly', label: 'Yearly' },
+];
+function nextRecurrence(dateStr, rule) {
+  if (!rule || rule === 'none') return '';
+  const base = dateStr ? new Date(dateStr + 'T00:00:00') : new Date();
+  const d = new Date(base);
+  if (rule === 'daily') d.setDate(d.getDate() + 1);
+  else if (rule === 'weekdays') {
+    do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
+  }
+  else if (rule === 'weekly') d.setDate(d.getDate() + 7);
+  else if (rule === 'biweekly') d.setDate(d.getDate() + 14);
+  else if (rule === 'monthly') d.setMonth(d.getMonth() + 1);
+  else if (rule === 'yearly') d.setFullYear(d.getFullYear() + 1);
+  // If past, keep advancing until future
+  const today = new Date(); today.setHours(0,0,0,0);
+  let safety = 0;
+  while (d < today && safety++ < 365) {
+    if (rule === 'daily') d.setDate(d.getDate() + 1);
+    else if (rule === 'weekdays') { do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6); }
+    else if (rule === 'weekly') d.setDate(d.getDate() + 7);
+    else if (rule === 'biweekly') d.setDate(d.getDate() + 14);
+    else if (rule === 'monthly') d.setMonth(d.getMonth() + 1);
+    else if (rule === 'yearly') d.setFullYear(d.getFullYear() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+function recurLabel(rule) {
+  const o = RECUR_OPTIONS.find(r => r.value === rule);
+  return o ? o.label : '';
+}
+
+// ---------- Command Palette ----------
+function CommandPalette({ data, onClose, onAction }) {
+  const [query, setQuery] = useState('');
+  const [selected, setSelected] = useState(0);
+  const inputRef = useRef(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const items = useMemo(() => {
+    const q = query.toLowerCase();
+    const list = [];
+    list.push({ kind: 'view', id: 'view-today', label: 'Go to Today', hint: 'View', action: { type: 'view', view: 'today' } });
+    list.push({ kind: 'view', id: 'view-all', label: 'Go to All Tasks', hint: 'View', action: { type: 'view', view: 'all' } });
+    data.projects.forEach(p => {
+      list.push({ kind: 'project', id: 'p-' + p.id, label: p.name, hint: 'Project', color: p.color, action: { type: 'project', id: p.id } });
+    });
+    list.push({ kind: 'action', id: 'a-newtask', label: 'New task in current project', hint: 'Action', action: { type: 'newtask' } });
+    list.push({ kind: 'action', id: 'a-newproject', label: 'New project', hint: 'Action', action: { type: 'newproject' } });
+    list.push({ kind: 'action', id: 'a-export', label: 'Export backup (download)', hint: 'Action', action: { type: 'export' } });
+    list.push({ kind: 'action', id: 'a-snapshot', label: 'Save snapshot to server', hint: 'Action', action: { type: 'snapshot' } });
+    list.push({ kind: 'action', id: 'a-restore', label: 'Browse server snapshots…', hint: 'Action', action: { type: 'restore' } });
+    list.push({ kind: 'action', id: 'a-theme', label: 'Toggle dark mode', hint: 'Action', action: { type: 'theme' } });
+    if (!q) return list;
+    return list.filter(i => i.label.toLowerCase().includes(q));
+  }, [query, data]);
+
+  useEffect(() => { setSelected(0); }, [query]);
+
+  const onKey = (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); setSelected(s => Math.min(s + 1, items.length - 1)); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setSelected(s => Math.max(s - 1, 0)); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const item = items[selected];
+      if (item) onAction(item.action);
+    }
+    else if (e.key === 'Escape') { e.preventDefault(); onClose(); }
+  };
+
+  return (
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
+        <input
+          ref={inputRef}
+          className="palette-input"
+          placeholder="Jump to project, view, or action…"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          onKeyDown={onKey}
+        />
+        <div className="palette-results">
+          {items.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--ink-3)', fontSize: 13 }}>No matches</div>
+          ) : items.map((item, i) => (
+            <div
+              key={item.id}
+              className={`palette-item ${i === selected ? 'selected' : ''}`}
+              onClick={() => onAction(item.action)}
+              onMouseEnter={() => setSelected(i)}
+            >
+              {item.color && <span className="priority-dot" style={{ background: item.color }}/>}
+              <span className="item-label">{item.label}</span>
+              <span className="item-hint">{item.hint}</span>
+            </div>
+          ))}
+        </div>
+        <div className="palette-footer">
+          <span><kbd>↑↓</kbd>Navigate</span>
+          <span><kbd>↵</kbd>Select</span>
+          <span><kbd>Esc</kbd>Close</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Components ----------
+
+function ThemeToggle({ theme, setTheme }) {
+  return (
+    <button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} title="Toggle theme" aria-label="Toggle theme">
+      {theme === 'light' ? <Icon.Moon/> : <Icon.Sun/>}
+    </button>
+  );
+}
+
+function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick }) {
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameVal, setRenameVal] = useState('');
+  const [dragProjectId, setDragProjectId] = useState(null);
+  const [dropProjectTarget, setDropProjectTarget] = useState(null);
+  const renameInputRef = useRef(null);
+
+  useEffect(() => {
+    if (renamingId && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [renamingId]);
+
+  const startRename = (proj) => {
+    setRenamingId(proj.id);
+    setRenameVal(proj.name);
+  };
+  const commitRename = () => {
+    if (!renamingId) return;
+    const v = renameVal.trim() || 'Untitled';
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => p.id === renamingId ? { ...p, name: v } : p),
+    }));
+    setRenamingId(null);
+  };
+  const deleteProject = (id) => {
+    if (!confirm('Delete this project and all its tasks?')) return;
+    setData(d => {
+      const projects = d.projects.filter(p => p.id !== id);
+      const activeProjectId = d.activeProjectId === id
+        ? (projects[0]?.id || null)
+        : d.activeProjectId;
+      return { ...d, projects, activeProjectId, activeView: 'project' };
+    });
+  };
+  const addProject = () => {
+    const colors = ['#c1542a', '#5c7a3a', '#b88820', '#6b5b8a', '#3a6e7a', '#a04060'];
+    const newP = {
+      id: uid(), name: 'New Project',
+      color: colors[Math.floor(Math.random() * colors.length)],
+      createdAt: Date.now(), tasks: [],
+    };
+    setData(d => ({ ...d, projects: [...d.projects, newP], activeProjectId: newP.id, activeView: 'project' }));
+    setTimeout(() => startRename(newP), 50);
+  };
+
+  const setView = (v) => setData(d => ({ ...d, activeView: v }));
+  const setProject = (id) => setData(d => ({ ...d, activeProjectId: id, activeView: 'project' }));
+
+  return (
+    <aside className="sidebar">
+      <div className="sidebar-header">
+        <div className="brand"><span className="brand-mark">◆</span> Tasks</div>
+        <ThemeToggle theme={theme} setTheme={setTheme}/>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-label">Views</div>
+      </div>
+      <div style={{ padding: '0 12px' }}>
+        <div className={`nav-item ${data.activeView === 'today' ? 'active' : ''}`} onClick={() => setView('today')}>
+          <Icon.Today/>
+          <span className="nav-item-label">Today</span>
+          <span className="nav-item-count">{totals.today}</span>
+        </div>
+        <div className={`nav-item ${data.activeView === 'all' ? 'active' : ''}`} onClick={() => setView('all')}>
+          <Icon.Inbox/>
+          <span className="nav-item-label">All Tasks</span>
+          <span className="nav-item-count">{totals.all}</span>
+        </div>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="section-label">
+          <span>Projects</span>
+          <span className="count">{data.projects.length}</span>
+        </div>
+      </div>
+      <div className="sidebar-list">
+        {data.projects.map(p => {
+          const isActive = data.activeView === 'project' && data.activeProjectId === p.id;
+          const open = p.tasks.filter(t => !t.completed).length;
+          return (
+            <div
+              key={p.id}
+              className={`nav-item project-item ${dragProjectId === p.id ? 'dragging' : ''} ${dropProjectTarget?.id === p.id ? 'drop-' + dropProjectTarget.where : ''}`}
+              onClick={() => setProject(p.id)}
+              style={isActive ? { background: 'var(--surface-2)', color: 'var(--ink)' } : {}}
+              draggable={!renamingId}
+              onDragStart={(e) => { setDragProjectId(p.id); e.dataTransfer.effectAllowed = 'move'; try { e.dataTransfer.setData('text/plain', p.id); } catch(err){} }}
+              onDragOver={(e) => {
+                if (!dragProjectId || dragProjectId === p.id) return;
+                e.preventDefault();
+                const rect = e.currentTarget.getBoundingClientRect();
+                const where = (e.clientY - rect.top) < rect.height / 2 ? 'above' : 'below';
+                setDropProjectTarget({ id: p.id, where });
+              }}
+              onDragLeave={() => setDropProjectTarget(prev => prev && prev.id === p.id ? null : prev)}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (!dragProjectId || dragProjectId === p.id) { setDropProjectTarget(null); return; }
+                const where = dropProjectTarget?.where || 'above';
+                setData(d => {
+                  const list = [...d.projects];
+                  const fromIdx = list.findIndex(x => x.id === dragProjectId);
+                  if (fromIdx === -1) return d;
+                  const [moved] = list.splice(fromIdx, 1);
+                  let toIdx = list.findIndex(x => x.id === p.id);
+                  if (toIdx === -1) toIdx = list.length;
+                  if (where === 'below') toIdx += 1;
+                  list.splice(toIdx, 0, moved);
+                  return { ...d, projects: list };
+                });
+                setDragProjectId(null); setDropProjectTarget(null);
+              }}
+              onDragEnd={() => { setDragProjectId(null); setDropProjectTarget(null); }}
+            >
+              <span className="nav-dot" style={{ background: isActive ? p.color : undefined, opacity: isActive ? 1 : 0.6 }}/>
+              {renamingId === p.id ? (
+                <input
+                  ref={renameInputRef}
+                  className="rename-input"
+                  value={renameVal}
+                  onChange={(e) => setRenameVal(e.target.value)}
+                  onBlur={commitRename}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') commitRename();
+                    if (e.key === 'Escape') { setRenamingId(null); }
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <>
+                  <span className="nav-item-label">{p.name}</span>
+                  <div className="project-actions" onClick={(e) => e.stopPropagation()}>
+                    <button className="icon-btn" title="Rename" onClick={() => startRename(p)}><Icon.Edit size={11}/></button>
+                    <button className="icon-btn" title="Delete" onClick={() => deleteProject(p.id)}><Icon.Trash size={11}/></button>
+                  </div>
+                  {!renamingId && <span className="nav-item-count">{open}</span>}
+                </>
+              )}
+            </div>
+          );
+        })}
+        <button className="add-project" onClick={addProject}>
+          <Icon.Plus size={12}/> New project
+        </button>
+      </div>
+
+      <div className="sidebar-section" style={{ padding: '8px 12px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, padding: '0 0 8px' }}>
+          <button className="btn" style={{ flex: 1, justifyContent: 'center', fontSize: 12, padding: '7px 10px' }} onClick={onExport} title="Download a JSON backup">
+            <Icon.Download size={12}/> Export
+          </button>
+          <button className="btn" style={{ flex: 1, justifyContent: 'center', fontSize: 12, padding: '7px 10px' }} onClick={onImportClick} title="Restore from a JSON backup">
+            <Icon.Upload size={12}/> Import
+          </button>
+        </div>
+      </div>
+
+      <div className="sidebar-footer">
+        <span><span className="dot"></span>LOCAL</span>
+        <span>v1.0</span>
+      </div>
+    </aside>
+  );
+}
+
+function SubtaskItem({ st, onToggle, onChange, onDelete, onEnter }) {
+  return (
+    <div className={`subtask ${st.done ? 'checked' : ''}`}>
+      <button className={`subtask-checkbox ${st.done ? 'checked' : ''}`} onClick={onToggle}>
+        <Icon.Check size={10}/>
+      </button>
+      <input
+        className="subtask-input"
+        value={st.title}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') { e.preventDefault(); onEnter(); }
+          if (e.key === 'Backspace' && !st.title) { e.preventDefault(); onDelete(); }
+        }}
+        placeholder="Subtask"
+      />
+      <button className="icon-btn subtask-delete" onClick={onDelete}><Icon.X size={12}/></button>
+    </div>
+  );
+}
+
+function Attachments({ taskId }) {
+  const [list, setList] = useState([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef(null);
+  const toast = (m) => { try { window.__taskboardToast?.(m); } catch (e) {} };
+
+  const refresh = useCallback(async () => {
+    try {
+      const r = await fetch(`/api/attachments?task_id=${encodeURIComponent(taskId)}`, { cache: 'no-store' });
+      if (r.ok) setList(await r.json());
+    } catch (e) {}
+  }, [taskId]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const upload = async (file) => {
+    if (!file) return;
+    if (file.size > 25 * 1024 * 1024) { toast('File too large (max 25 MB)'); return; }
+    setUploading(true);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch(`/api/attachments?task_id=${encodeURIComponent(taskId)}`, { method: 'POST', body: fd });
+      if (!r.ok) {
+        const j = await r.json().catch(() => ({}));
+        toast(`Upload failed: ${j.error || r.status}`);
+      } else {
+        toast('Attached');
+        refresh();
+      }
+    } catch (e) {
+      toast('Upload failed: network error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const remove = async (id) => {
+    if (!confirm('Delete this attachment?')) return;
+    try {
+      const r = await fetch(`/api/attachments/${id}`, { method: 'DELETE' });
+      if (r.ok) { toast('Removed'); refresh(); }
+    } catch (e) {}
+  };
+
+  const fmtSize = (n) => {
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / 1024 / 1024).toFixed(1)} MB`;
+  };
+
+  return (
+    <div className="body-section">
+      <div className="body-label">Attachments {list.length > 0 && `· ${list.length}`}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 }}>
+        {list.map(a => (
+          <div key={a.id} style={{
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '6px 10px', background: 'var(--surface-2)',
+            border: '1px solid var(--border)', borderRadius: 6, fontSize: 13,
+          }}>
+            <a href={`/api/attachments/${a.id}`} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--ink)', textDecoration: 'none', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {a.filename}
+            </a>
+            <span style={{ color: 'var(--ink-3)', fontSize: 11, fontFamily: 'IBM Plex Mono, monospace' }}>{fmtSize(a.size)}</span>
+            <button className="icon-btn" title="Delete" onClick={() => remove(a.id)}><Icon.Trash size={12}/></button>
+          </div>
+        ))}
+      </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        style={{ display: 'none' }}
+        onChange={(e) => { const f = e.target.files?.[0]; upload(f); e.target.value = ''; }}
+      />
+      <button className="add-subtask" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+        <Icon.Plus size={11}/> {uploading ? 'Uploading…' : 'Attach file'}
+      </button>
+    </div>
+  );
+}
+
+function BackupsModal({ onClose, onRestore }) {
+  const [list, setList] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const toast = (m) => { try { window.__taskboardToast?.(m); } catch (e) {} };
+
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/backups', { cache: 'no-store' });
+      if (r.ok) setList(await r.json());
+    } catch (e) {}
+    setLoading(false);
+  };
+  useEffect(() => { refresh(); }, []);
+
+  const restore = async (id) => {
+    if (!confirm('Replace current state with this snapshot? Local changes will be overwritten.')) return;
+    try {
+      const r = await fetch(`/api/backups/${id}`);
+      if (!r.ok) { toast('Restore failed'); return; }
+      const j = await r.json();
+      if (j && j.data && Array.isArray(j.data.projects)) {
+        onRestore(j.data);
+        toast(`Restored snapshot #${id}`);
+        onClose();
+      }
+    } catch (e) { toast('Restore failed'); }
+  };
+
+  const remove = async (id) => {
+    if (!confirm('Delete this snapshot?')) return;
+    try {
+      const r = await fetch(`/api/backups/${id}`, { method: 'DELETE' });
+      if (r.ok) { toast('Snapshot deleted'); refresh(); }
+    } catch (e) {}
+  };
+
+  const fmtSize = (n) => n < 1024 ? `${n} B` : n < 1024*1024 ? `${(n/1024).toFixed(1)} KB` : `${(n/1024/1024).toFixed(1)} MB`;
+
+  return (
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" style={{ width: 640 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>Server snapshots</div>
+          <button className="icon-btn" onClick={onClose}><Icon.X size={14}/></button>
+        </div>
+        <div style={{ maxHeight: '60vh', overflowY: 'auto', padding: 6 }}>
+          {loading && <div style={{ padding: 16, color: 'var(--ink-3)' }}>Loading…</div>}
+          {!loading && list.length === 0 && <div style={{ padding: 16, color: 'var(--ink-3)' }}>No snapshots yet. Use the command palette: "Save snapshot to server".</div>}
+          {list.map(b => (
+            <div key={b.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12,
+              padding: '10px 14px', borderRadius: 8,
+            }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ color: 'var(--ink)', fontSize: 13.5 }}>
+                  #{b.id} · {new Date(b.created_at).toLocaleString()}
+                </div>
+                <div style={{ color: 'var(--ink-3)', fontSize: 11, fontFamily: 'IBM Plex Mono, monospace' }}>
+                  {b.source} · {fmtSize(b.size)}{b.note ? ` · ${b.note}` : ''}
+                </div>
+              </div>
+              <button className="add-subtask" onClick={() => restore(b.id)}>Restore</button>
+              <button className="icon-btn" onClick={() => remove(b.id)}><Icon.Trash size={13}/></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, dragHandlers, dropClass }) {
+  const due = formatDueDate(task.dueDate);
+  const subProgress = task.subtasks.length > 0
+    ? task.subtasks.filter(s => s.done).length / task.subtasks.length
+    : 0;
+  const subDoneCount = task.subtasks.filter(s => s.done).length;
+  const newSubRef = useRef(null);
+
+  const toggleComplete = (e) => {
+    e.stopPropagation();
+    onUpdate({ ...task, completed: !task.completed });
+  };
+
+  const updateField = (k, v) => onUpdate({ ...task, [k]: v });
+
+  const addSubtask = () => {
+    const newSt = { id: uid(), title: '', done: false };
+    onUpdate({ ...task, subtasks: [...task.subtasks, newSt] });
+    setTimeout(() => {
+      const inputs = document.querySelectorAll(`[data-task-id="${task.id}"] .subtask-input`);
+      const last = inputs[inputs.length - 1];
+      if (last) last.focus();
+    }, 50);
+  };
+
+  const updateSubtask = (sid, patch) => {
+    onUpdate({
+      ...task,
+      subtasks: task.subtasks.map(s => s.id === sid ? { ...s, ...patch } : s),
+    });
+  };
+  const deleteSubtask = (sid) => {
+    onUpdate({ ...task, subtasks: task.subtasks.filter(s => s.id !== sid) });
+  };
+
+  return (
+    <div
+      className={`task ${task.completed ? 'completed' : ''} ${expanded ? 'expanded' : ''} ${dropClass || ''}`}
+      data-task-id={task.id}
+      draggable={dragHandlers ? true : undefined}
+      onDragStart={dragHandlers?.onDragStart}
+      onDragOver={dragHandlers?.onDragOver}
+      onDragLeave={dragHandlers?.onDragLeave}
+      onDrop={dragHandlers?.onDrop}
+      onDragEnd={dragHandlers?.onDragEnd}
+    >
+      <div className="task-row" onClick={onToggleExpand}>
+        <button className={`task-checkbox ${task.completed ? 'checked' : ''}`} onClick={toggleComplete}>
+          <Icon.Check size={12}/>
+        </button>
+        <div className="task-main">
+          {expanded ? (
+            <input
+              className="task-title-input"
+              value={task.title}
+              onChange={(e) => updateField('title', e.target.value)}
+              onClick={(e) => e.stopPropagation()}
+              placeholder="Task title"
+            />
+          ) : (
+            <div className="task-title">{task.title || <span style={{ color: 'var(--ink-4)' }}>Untitled task</span>}</div>
+          )}
+          <div className="task-meta">
+            {project && (
+              <span className="task-meta-item">
+                <span className="priority-dot" style={{ background: project.color }}/>
+                {project.name}
+              </span>
+            )}
+            {task.priority && task.priority !== 'none' && (
+              <span className="task-meta-item">
+                <span className={`priority-dot priority-${task.priority}`}/>
+                {task.priority === 'high' ? 'High' : task.priority === 'med' ? 'Medium' : 'Low'}
+              </span>
+            )}
+            {due && (
+              <span className={`task-meta-item ${task.completed ? 'completed-meta' : due.state}`}>
+                <Icon.Calendar/> {due.label}
+              </span>
+            )}
+            {task.subtasks.length > 0 && (
+              <span className="task-meta-item">
+                <Icon.Branch/> {subDoneCount}/{task.subtasks.length}
+              </span>
+            )}
+            {task.recur && task.recur !== 'none' && (
+              <span className="task-meta-item recur-badge">
+                <Icon.Repeat/> {recurLabel(task.recur)}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="task-actions" onClick={(e) => e.stopPropagation()}>
+          <button className="icon-btn" title="Delete task" onClick={onDelete}><Icon.Trash size={13}/></button>
+        </div>
+        <span className="expand-chevron"><Icon.Chevron/></span>
+      </div>
+
+      {expanded && (
+        <div className="task-body">
+          <div className="body-section">
+            <div className="meta-row">
+              <label className="field">
+                <span className="field-icon"><Icon.Calendar/></span>
+                <input
+                  type="date"
+                  value={task.dueDate || ''}
+                  onChange={(e) => updateField('dueDate', e.target.value)}
+                />
+                {task.dueDate && (
+                  <button className="icon-btn" style={{ width: 16, height: 16 }} onClick={() => updateField('dueDate', '')} title="Clear date"><Icon.X size={10}/></button>
+                )}
+              </label>
+              <label className="field">
+                <span className="field-icon"><Icon.Flag/></span>
+                <select
+                  className="field-select"
+                  value={task.priority || 'none'}
+                  onChange={(e) => updateField('priority', e.target.value)}
+                >
+                  <option value="none">No priority</option>
+                  <option value="low">Low</option>
+                  <option value="med">Medium</option>
+                  <option value="high">High</option>
+                </select>
+              </label>
+              <label className="field">
+                <span className="field-icon"><Icon.Repeat/></span>
+                <select
+                  className="field-select"
+                  value={task.recur || 'none'}
+                  onChange={(e) => updateField('recur', e.target.value)}
+                  title="Recurrence"
+                >
+                  {RECUR_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              </label>
+            </div>
+          </div>
+
+          <div className="body-section">
+            <div className="body-label">Notes</div>
+            <textarea
+              className="description-textarea"
+              value={task.description || ''}
+              onChange={(e) => updateField('description', e.target.value)}
+              placeholder="Add notes, links, context…"
+            />
+          </div>
+
+          <div className="body-section">
+            <div className="body-label">Subtasks {task.subtasks.length > 0 && `· ${subDoneCount}/${task.subtasks.length}`}</div>
+            {task.subtasks.length > 0 && (
+              <div className="subtask-progress">
+                <div className="progress-bar"><div className="progress-fill" style={{ width: `${subProgress * 100}%` }}/></div>
+                <span className="progress-text">{Math.round(subProgress * 100)}%</span>
+              </div>
+            )}
+            <div className="subtask-list">
+              {task.subtasks.map(st => (
+                <SubtaskItem
+                  key={st.id}
+                  st={st}
+                  onToggle={() => updateSubtask(st.id, { done: !st.done })}
+                  onChange={(v) => updateSubtask(st.id, { title: v })}
+                  onDelete={() => deleteSubtask(st.id)}
+                  onEnter={addSubtask}
+                />
+              ))}
+            </div>
+            <button className="add-subtask" onClick={addSubtask}>
+              <Icon.Plus size={11}/> Add subtask
+            </button>
+          </div>
+
+          <Attachments taskId={task.id}/>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
+  const [filter, setFilter] = useState('all'); // all | open | done
+  const [search, setSearch] = useState('');
+  const [expandedId, setExpandedId] = useState(null);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const titleInputRef = useRef(null);
+  const searchInputRef = useRef(null);
+  const [editingProjectName, setEditingProjectName] = useState(false);
+  const [draggedTaskId, setDraggedTaskId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null); // { id, where }
+
+  // External triggers (keyboard shortcuts)
+  useEffect(() => {
+    if (newTaskTrigger > 0) {
+      titleInputRef.current?.focus();
+    }
+  }, [newTaskTrigger]);
+  useEffect(() => {
+    if (focusSearchTrigger > 0) {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    }
+  }, [focusSearchTrigger]);
+  useEffect(() => {
+    const onKey = (e) => {
+      if (e.key === 'Escape' && expandedId && document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+        setExpandedId(null);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expandedId]);
+
+  const activeProject = useMemo(
+    () => data.projects.find(p => p.id === data.activeProjectId),
+    [data.projects, data.activeProjectId]
+  );
+
+  // Compute the list of tasks shown based on view
+  const { displayTasks, viewTitle, viewSubtitle, viewProject } = useMemo(() => {
+    if (data.activeView === 'today') {
+      const today = todayStr();
+      const tasks = [];
+      data.projects.forEach(p => {
+        p.tasks.forEach(t => {
+          if (!t.completed && t.dueDate && t.dueDate <= today) {
+            tasks.push({ ...t, _projectId: p.id });
+          }
+        });
+      });
+      return { displayTasks: tasks, viewTitle: 'Today', viewSubtitle: 'Due today and overdue', viewProject: null };
+    }
+    if (data.activeView === 'all') {
+      const tasks = [];
+      data.projects.forEach(p => p.tasks.forEach(t => tasks.push({ ...t, _projectId: p.id })));
+      return { displayTasks: tasks, viewTitle: 'All Tasks', viewSubtitle: 'Across every project', viewProject: null };
+    }
+    if (!activeProject) {
+      return { displayTasks: [], viewTitle: 'No project', viewSubtitle: 'Create one in the sidebar', viewProject: null };
+    }
+    return {
+      displayTasks: activeProject.tasks.map(t => ({ ...t, _projectId: activeProject.id })),
+      viewTitle: activeProject.name,
+      viewSubtitle: 'Project',
+      viewProject: activeProject,
+    };
+  }, [data, activeProject]);
+
+  // Apply filter + search
+  const filteredTasks = useMemo(() => {
+    return displayTasks.filter(t => {
+      if (filter === 'open' && t.completed) return false;
+      if (filter === 'done' && !t.completed) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        const inTitle = (t.title || '').toLowerCase().includes(q);
+        const inDesc = (t.description || '').toLowerCase().includes(q);
+        const inSub = t.subtasks.some(s => (s.title || '').toLowerCase().includes(q));
+        if (!inTitle && !inDesc && !inSub) return false;
+      }
+      return true;
+    });
+  }, [displayTasks, filter, search]);
+
+  // Group tasks by deadline urgency for richer presentation
+  const groupedTasks = useMemo(() => {
+    const today = todayStr();
+    const groups = {
+      overdue: [], today: [], thisWeek: [], later: [], noDate: [], completed: []
+    };
+    filteredTasks.forEach(t => {
+      if (t.completed) { groups.completed.push(t); return; }
+      if (!t.dueDate) { groups.noDate.push(t); return; }
+      if (t.dueDate < today) { groups.overdue.push(t); return; }
+      if (t.dueDate === today) { groups.today.push(t); return; }
+      const d = new Date(t.dueDate + 'T00:00:00');
+      const diff = (d - new Date(today + 'T00:00:00')) / 86400000;
+      if (diff <= 7) groups.thisWeek.push(t);
+      else groups.later.push(t);
+    });
+    Object.keys(groups).forEach(k => {
+      groups[k].sort((a, b) => {
+        if (a.dueDate && b.dueDate) return a.dueDate.localeCompare(b.dueDate);
+        if (a.dueDate) return -1; if (b.dueDate) return 1;
+        return 0;
+      });
+    });
+    return groups;
+  }, [filteredTasks]);
+
+  const counts = useMemo(() => {
+    return {
+      all: displayTasks.length,
+      open: displayTasks.filter(t => !t.completed).length,
+      done: displayTasks.filter(t => t.completed).length,
+    };
+  }, [displayTasks]);
+
+  // Update task within data
+  const updateTask = useCallback((updated) => {
+    const projectId = updated._projectId;
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => {
+        if (p.id !== projectId) return p;
+        return {
+          ...p,
+          tasks: p.tasks.map(t => {
+            if (t.id !== updated.id) return t;
+            // Recurring: when marking complete, spawn next instance
+            const cleaned = { ...updated, _projectId: undefined };
+            const wasComplete = t.completed;
+            if (!wasComplete && cleaned.completed && cleaned.recur && cleaned.recur !== 'none') {
+              const nextDue = nextRecurrence(cleaned.dueDate || todayStr(), cleaned.recur);
+              const reset = {
+                ...cleaned,
+                id: uid(),
+                completed: false,
+                dueDate: nextDue,
+                subtasks: cleaned.subtasks.map(s => ({ ...s, id: uid(), done: false })),
+              };
+              return [cleaned, reset];
+            }
+            return cleaned;
+          }).flat(),
+        };
+      }),
+    }));
+  }, [setData]);
+
+  const deleteTask = useCallback((task) => {
+    if (!confirm('Delete this task?')) return;
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => {
+        if (p.id !== task._projectId) return p;
+        return { ...p, tasks: p.tasks.filter(t => t.id !== task.id) };
+      }),
+    }));
+  }, [setData]);
+
+  const addTask = useCallback(() => {
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    if (!activeProject) return;
+    const newT = {
+      id: uid(), title, completed: false, priority: 'none',
+      dueDate: '', description: '', subtasks: [], recur: 'none',
+    };
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p =>
+        p.id === activeProject.id ? { ...p, tasks: [newT, ...p.tasks] } : p
+      ),
+    }));
+    setNewTaskTitle('');
+    setExpandedId(newT.id);
+  }, [newTaskTitle, activeProject, setData]);
+
+  const renameProject = (newName) => {
+    if (!activeProject) return;
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => p.id === activeProject.id ? { ...p, name: newName.trim() || 'Untitled' } : p),
+    }));
+  };
+
+  // Drag handlers for tasks within the active project (project view only)
+  const makeDragHandlers = (task) => {
+    if (!isProjectView) return null;
+    return {
+      onDragStart: (e) => {
+        setDraggedTaskId(task.id);
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', task.id); } catch (err) {}
+      },
+      onDragOver: (e) => {
+        if (!draggedTaskId || draggedTaskId === task.id) return;
+        e.preventDefault();
+        const rect = e.currentTarget.getBoundingClientRect();
+        const where = (e.clientY - rect.top) < rect.height / 2 ? 'above' : 'below';
+        setDropTarget({ id: task.id, where });
+      },
+      onDragLeave: () => {
+        setDropTarget(prev => prev && prev.id === task.id ? null : prev);
+      },
+      onDrop: (e) => {
+        e.preventDefault();
+        if (!draggedTaskId || draggedTaskId === task.id) { setDropTarget(null); return; }
+        const target = task.id;
+        const where = dropTarget?.where || 'above';
+        setData(d => ({
+          ...d,
+          projects: d.projects.map(p => {
+            if (p.id !== activeProject.id) return p;
+            const list = [...p.tasks];
+            const fromIdx = list.findIndex(t => t.id === draggedTaskId);
+            if (fromIdx === -1) return p;
+            const [moved] = list.splice(fromIdx, 1);
+            let toIdx = list.findIndex(t => t.id === target);
+            if (toIdx === -1) toIdx = list.length;
+            if (where === 'below') toIdx += 1;
+            list.splice(toIdx, 0, moved);
+            return { ...p, tasks: list };
+          }),
+        }));
+        setDraggedTaskId(null);
+        setDropTarget(null);
+      },
+      onDragEnd: () => { setDraggedTaskId(null); setDropTarget(null); },
+    };
+  };
+
+  const renderGroup = (key, label, tasks, urgent = false) => {
+    if (tasks.length === 0) return null;
+    return (
+      <div key={key}>
+        <div className={`task-group-header ${urgent ? 'urgent' : ''}`}>
+          <span>{label}</span>
+          <span>{tasks.length}</span>
+        </div>
+        {tasks.map(t => {
+          const proj = data.projects.find(p => p.id === t._projectId);
+          const dropClass = dropTarget?.id === t.id ? `drop-${dropTarget.where} dragging-target` : (draggedTaskId === t.id ? 'dragging' : '');
+          return (
+            <TaskRow
+              key={t.id}
+              task={t}
+              project={data.activeView !== 'project' ? proj : null}
+              expanded={expandedId === t.id}
+              onToggleExpand={() => setExpandedId(expandedId === t.id ? null : t.id)}
+              onUpdate={updateTask}
+              onDelete={() => deleteTask(t)}
+              dragHandlers={makeDragHandlers(t)}
+              dropClass={dropClass}
+            />
+          );
+        })}
+      </div>
+    );
+  };
+
+  const isProjectView = data.activeView === 'project' && activeProject;
+
+  return (
+    <main className="main">
+      <header className="main-header">
+        <div className="header-left">
+          <div className="breadcrumb">
+            {data.activeView === 'project' && activeProject
+              ? <><Icon.Folder/> Project</>
+              : data.activeView === 'today' ? <><Icon.Today/> View</>
+              : <><Icon.Inbox/> View</>
+            }
+          </div>
+          {isProjectView ? (
+            editingProjectName ? (
+              <input
+                autoFocus
+                className="project-title-input"
+                defaultValue={activeProject.name}
+                onBlur={(e) => { renameProject(e.target.value); setEditingProjectName(false); }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { renameProject(e.target.value); setEditingProjectName(false); }
+                  if (e.key === 'Escape') setEditingProjectName(false);
+                }}
+              />
+            ) : (
+              <div className="project-title-input" style={{ cursor: 'text' }} onClick={() => setEditingProjectName(true)}>
+                {activeProject.name}
+              </div>
+            )
+          ) : (
+            <div className="project-title-input" style={{ pointerEvents: 'none' }}>{viewTitle}</div>
+          )}
+          <div className="project-meta">
+            {isProjectView ? (
+              <>
+                <span className="meta-pill"><span className="priority-dot" style={{ background: activeProject.color }}/> Color</span>
+                <span className="meta-pill"><strong>{counts.open}</strong> open</span>
+                <span className="meta-pill"><strong>{counts.done}</strong> done</span>
+                <span className="meta-pill">{viewSubtitle}</span>
+              </>
+            ) : (
+              <>
+                <span className="meta-pill"><strong>{counts.open}</strong> open</span>
+                <span className="meta-pill"><strong>{counts.done}</strong> done</span>
+                <span className="meta-pill">{viewSubtitle}</span>
+              </>
+            )}
+          </div>
+        </div>
+        <div className="header-right">
+          {isProjectView && (
+            <button className="btn btn-primary" onClick={() => titleInputRef.current?.focus()}>
+              <Icon.Plus size={13}/> New task
+            </button>
+          )}
+        </div>
+      </header>
+
+      <div className="toolbar">
+        <button className={`filter-tab ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+          All <span className="num">{counts.all}</span>
+        </button>
+        <button className={`filter-tab ${filter === 'open' ? 'active' : ''}`} onClick={() => setFilter('open')}>
+          Open <span className="num">{counts.open}</span>
+        </button>
+        <button className={`filter-tab ${filter === 'done' ? 'active' : ''}`} onClick={() => setFilter('done')}>
+          Done <span className="num">{counts.done}</span>
+        </button>
+        <div className="toolbar-spacer"/>
+        <input
+          ref={searchInputRef}
+          className="search-input"
+          placeholder="Search tasks…  (press / )"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </div>
+
+      <div className="task-canvas">
+        {isProjectView && (
+          <div className="add-task-row" onClick={() => titleInputRef.current?.focus()}>
+            <span className="placeholder-circle"/>
+            <input
+              ref={titleInputRef}
+              className="add-task-input"
+              placeholder="Add a task and press Enter…"
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+            />
+          </div>
+        )}
+
+        {filteredTasks.length === 0 ? (
+          <div className="empty-state">
+            <h3>Nothing here yet</h3>
+            <p>{isProjectView ? 'Add your first task above to get started.' : 'No tasks match this view.'}</p>
+          </div>
+        ) : (
+          <>
+            {renderGroup('overdue', 'Overdue', groupedTasks.overdue, true)}
+            {renderGroup('today', 'Today', groupedTasks.today)}
+            {renderGroup('thisWeek', 'This Week', groupedTasks.thisWeek)}
+            {renderGroup('later', 'Later', groupedTasks.later)}
+            {renderGroup('noDate', 'No Deadline', groupedTasks.noDate)}
+            {renderGroup('completed', 'Completed', groupedTasks.completed)}
+          </>
+        )}
+      </div>
+    </main>
+  );
+}
+
+function App() {
+  const [data, setData] = useState(loadData);
+  const [theme, setTheme] = useState(loadTheme);
+  const [toast, setToast] = useState('');
+  const importInputRef = useRef(null);
+
+  const showToast = (msg) => {
+    setToast(msg);
+    setTimeout(() => setToast(''), 2400);
+  };
+
+  const exportJSON = () => {
+    const payload = {
+      _format: 'task-board',
+      _version: 1,
+      exportedAt: new Date().toISOString(),
+      data,
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    const stamp = new Date().toISOString().slice(0,10);
+    a.download = `task-board-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast('Exported backup file');
+  };
+
+  const importJSON = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const parsed = JSON.parse(e.target.result);
+        const payload = parsed && parsed.data ? parsed.data : parsed;
+        if (!payload || !Array.isArray(payload.projects)) {
+          showToast('Import failed: invalid file');
+          return;
+        }
+        if (!confirm('Replace current tasks with this backup? This cannot be undone.')) return;
+        const cleanProjects = payload.projects.map(p => ({
+          id: p.id || uid(),
+          name: p.name || 'Untitled',
+          color: p.color || '#c1542a',
+          createdAt: p.createdAt || Date.now(),
+          tasks: (p.tasks || []).map(t => ({
+            id: t.id || uid(),
+            title: t.title || '',
+            completed: !!t.completed,
+            priority: t.priority || 'none',
+            dueDate: t.dueDate || '',
+            description: t.description || '',
+            subtasks: (t.subtasks || []).map(s => ({
+              id: s.id || uid(),
+              title: s.title || '',
+              done: !!s.done,
+            })),
+          })),
+        }));
+        setData({
+          projects: cleanProjects,
+          activeProjectId: payload.activeProjectId || cleanProjects[0]?.id || null,
+          activeView: payload.activeView || 'project',
+        });
+        showToast(`Imported ${cleanProjects.length} project${cleanProjects.length === 1 ? '' : 's'}`);
+      } catch (err) {
+        showToast('Import failed: bad JSON');
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  useEffect(() => { saveData(data); }, [data]);
+  useEffect(() => {
+    fetchServerData().then(srv => {
+      if (srv) setData(srv);
+    });
+  }, []);
+  useEffect(() => { window.__taskboardToast = showToast; }, [showToast]);
+  useEffect(() => {
+    saveTheme(theme);
+    document.documentElement.setAttribute('data-theme', theme);
+  }, [theme]);
+
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [backupsOpen, setBackupsOpen] = useState(false);
+  const newTaskRequestRef = useRef(0);
+  const focusSearchRef = useRef(0);
+  const [, forceTick] = useState(0);
+
+  const requestNewTask = () => { newTaskRequestRef.current += 1; forceTick(t => t + 1); };
+  const requestFocusSearch = () => { focusSearchRef.current += 1; forceTick(t => t + 1); };
+
+  const addProjectFromApp = () => {
+    const colors = ['#c1542a', '#5c7a3a', '#b88820', '#6b5b8a', '#3a6e7a', '#a04060'];
+    const newP = { id: uid(), name: 'New Project', color: colors[Math.floor(Math.random()*colors.length)], createdAt: Date.now(), tasks: [] };
+    setData(d => ({ ...d, projects: [...d.projects, newP], activeProjectId: newP.id, activeView: 'project' }));
+  };
+
+  const handlePaletteAction = (action) => {
+    setPaletteOpen(false);
+    if (action.type === 'view') setData(d => ({ ...d, activeView: action.view }));
+    else if (action.type === 'project') setData(d => ({ ...d, activeProjectId: action.id, activeView: 'project' }));
+    else if (action.type === 'newtask') { setData(d => ({ ...d, activeView: 'project' })); setTimeout(requestNewTask, 50); }
+    else if (action.type === 'newproject') addProjectFromApp();
+    else if (action.type === 'export') exportJSON();
+    else if (action.type === 'snapshot') saveSnapshot();
+    else if (action.type === 'restore') setBackupsOpen(true);
+    else if (action.type === 'theme') setTheme(t => t === 'light' ? 'dark' : 'light');
+  };
+
+  const saveSnapshot = async () => {
+    try {
+      const r = await fetch('/api/backups', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ data, source: 'manual' }),
+      });
+      if (r.ok) {
+        const j = await r.json();
+        showToast(`Saved snapshot #${j.id}`);
+      } else {
+        showToast('Snapshot failed');
+      }
+    } catch (e) {
+      showToast('Snapshot failed: network error');
+    }
+  };
+
+  // Global shortcuts
+  useEffect(() => {
+    const onKey = (e) => {
+      const tgt = e.target;
+      const isTyping = tgt && (tgt.tagName === 'INPUT' || tgt.tagName === 'TEXTAREA' || tgt.isContentEditable);
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
+        return;
+      }
+      if (e.key === 'Escape' && paletteOpen) { setPaletteOpen(false); return; }
+      if (isTyping) return;
+      if (e.key === '/') { e.preventDefault(); requestFocusSearch(); }
+      else if (e.key.toLowerCase() === 'n') { e.preventDefault(); requestNewTask(); }
+      else if (e.key.toLowerCase() === 't') { e.preventDefault(); setData(d => ({ ...d, activeView: 'today' })); }
+      else if (e.key.toLowerCase() === 'a') { e.preventDefault(); setData(d => ({ ...d, activeView: 'all' })); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [paletteOpen]);
+
+  const totals = useMemo(() => {
+    const today = todayStr();
+    let all = 0, todayCount = 0;
+    data.projects.forEach(p => p.tasks.forEach(t => {
+      if (!t.completed) all += 1;
+      if (!t.completed && t.dueDate && t.dueDate <= today) todayCount += 1;
+    }));
+    return { all, today: todayCount };
+  }, [data]);
+
+  return (
+    <>
+      <Sidebar
+        data={data}
+        setData={setData}
+        theme={theme}
+        setTheme={setTheme}
+        totals={totals}
+        onExport={exportJSON}
+        onImportClick={() => importInputRef.current?.click()}
+      />
+      <MainView
+        data={data}
+        setData={setData}
+        newTaskTrigger={newTaskRequestRef.current}
+        focusSearchTrigger={focusSearchRef.current}
+      />
+      <input
+        ref={importInputRef}
+        type="file"
+        accept="application/json,.json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          importJSON(f);
+          e.target.value = '';
+        }}
+      />
+      <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
+      {paletteOpen && <CommandPalette data={data} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction}/>}
+      {backupsOpen && <BackupsModal onClose={() => setBackupsOpen(false)} onRestore={(d) => setData(d)}/>}
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
+
+</script>
+</body>
+</html>
