@@ -1037,9 +1037,17 @@ function loadData() {
 async function fetchServerData() {
   try {
     const r = await fetch('/api/data', { cache: 'no-store' });
+    if (r.status === 401) { location.replace('/login.html'); return null; }
     if (!r.ok) return null;
     const j = await r.json();
     return (j && j.data && Array.isArray(j.data.projects)) ? j.data : null;
+  } catch (e) { return null; }
+}
+async function fetchSession() {
+  try {
+    const r = await fetch('/api/session', { cache: 'no-store' });
+    const j = await r.json();
+    return j.authenticated ? { id: j.id, username: j.username, role: j.role } : null;
   } catch (e) { return null; }
 }
 let _saveTimer = null;
@@ -1056,6 +1064,7 @@ function saveData(data) {
         headers: { 'Content-Type': 'application/json' },
         body,
       });
+      if (r.status === 401) { location.replace('/login.html'); return; }
       if (r.ok) _lastPosted = body;
     } catch (e) {}
   }, 500);
@@ -1209,7 +1218,7 @@ function ThemeToggle({ theme, setTheme }) {
   );
 }
 
-function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick }) {
+function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick, user, onLogout }) {
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState('');
   const [dragProjectId, setDragProjectId] = useState(null);
@@ -1371,9 +1380,17 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
         </div>
       </div>
 
-      <div className="sidebar-footer">
-        <span><span className="dot"></span>LOCAL</span>
-        <span>v1.0</span>
+      <div className="sidebar-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 6, padding: '10px 16px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span><span className="dot"></span>{user?.username || 'GUEST'}{user?.role === 'admin' && ' · ADMIN'}</span>
+          <span>v2.0</span>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 9 }}>
+          {user?.role === 'admin'
+            ? <a href="/admin.html" style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>ADMIN PANEL</a>
+            : <span/>}
+          <a href="#" onClick={(e) => { e.preventDefault(); onLogout?.(); }} style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>SIGN OUT</a>
+        </div>
       </div>
     </aside>
   );
@@ -2117,7 +2134,13 @@ function App() {
   const [data, setData] = useState(loadData);
   const [theme, setTheme] = useState(loadTheme);
   const [toast, setToast] = useState('');
+  const [user, setUser] = useState(null);
   const importInputRef = useRef(null);
+
+  const handleLogout = async () => {
+    try { await fetch('/api/session', { method: 'DELETE' }); } catch (e) {}
+    location.replace('/login.html');
+  };
 
   const showToast = (msg) => {
     setToast(msg);
@@ -2190,9 +2213,13 @@ function App() {
 
   useEffect(() => { saveData(data); }, [data]);
   useEffect(() => {
-    fetchServerData().then(srv => {
+    (async () => {
+      const u = await fetchSession();
+      if (!u) { location.replace('/login.html'); return; }
+      setUser(u);
+      const srv = await fetchServerData();
       if (srv) setData(srv);
-    });
+    })();
   }, []);
   useEffect(() => { window.__taskboardToast = showToast; }, [showToast]);
   useEffect(() => {
@@ -2286,6 +2313,8 @@ function App() {
         totals={totals}
         onExport={exportJSON}
         onImportClick={() => importInputRef.current?.click()}
+        user={user}
+        onLogout={handleLogout}
       />
       <MainView
         data={data}

@@ -1,45 +1,70 @@
 # Taskboard
 
-Self-hosted personal task & project board. Single-page React UI in one HTML file, Flask API on a Pi, SQLite + content-addressed file store. Designed for one user on a LAN — no auth (relies on network-level trust).
+Self-hosted multi-user task & project board. React UI in single-file HTML, Flask API, SQLite + content-addressed file store. Designed for a small group on a LAN.
 
 ## Features
+- **Multi-user** with `admin` / `user` roles. Per-user private boards (no cross-visibility for non-admins).
 - Projects with colored tasks, subtasks, due dates, priority, recurrence
-- Per-task file attachments (uploaded via UI, stored on disk under `/var/lib/taskboard/files/<sha[:2]>/<sha>`, deduped by content hash)
-- Server-side state snapshots ("Save snapshot to server" / "Browse server snapshots…" in the command palette)
-- LocalStorage acts as an offline cache; the Pi is the source of truth across devices
-- Cmd/Ctrl-K command palette, dark mode
+- Per-task file attachments (max 25 MB, deduped by SHA-256)
+- Server-side state snapshots (Cmd/Ctrl-K → "Save snapshot to server" / "Browse server snapshots…")
+- LocalStorage acts as offline cache; server is source of truth
+- Admin dashboard at `/admin.html` — create/disable/promote users, reset passwords, see usage stats
+- 30-day signed-cookie sessions, bcrypt password hashing
 
 ## Stack
 | Layer    | Tech                                       |
 |----------|--------------------------------------------|
-| UI       | React 18 via esm.sh, single `index.html`   |
-| API      | Flask 2.x, single `api.py`                 |
-| Storage  | SQLite (WAL mode) + content-addressed files |
+| UI       | React 18 via esm.sh, single `index.html` (+ `login.html`, `admin.html`) |
+| API      | Flask 2.x — `api.py`, `auth.py`, `migrate.py`, `cli.py` |
+| Storage  | SQLite (WAL) + content-addressed blob store |
+| Auth     | Username + bcrypt; signed-cookie sessions   |
 | Edge     | nginx — static + reverse proxy `/api/`     |
 | Service  | systemd unit `taskboard-api.service`       |
 
 ## Layout
 ```
-backend/      Flask API + tests
-frontend/     index.html (React, no build)
-deploy/       systemd unit, nginx server block, deploy.sh
-.github/      CI workflow
+backend/
+  api.py        Flask routes
+  auth.py       password hashing, session helpers, role decorators
+  migrate.py    idempotent SQLite schema migrations
+  cli.py        admin CLI: bootstrap, user add/passwd/role/disable
+  tests/        pytest suite
+frontend/
+  index.html    main board (React)
+  login.html    sign-in page
+  admin.html    admin dashboard (vanilla JS)
+deploy/
+  taskboard-api.service
+  nginx.conf
+  deploy.sh     idempotent installer (creates user, installs deps, bootstraps admin)
+.github/workflows/ci.yml
 ```
 
+## Password rules
+Minimum 8 characters, must include at least one uppercase, one lowercase, and one special character (any of `!@#$%^&*()-_=+[]{}|;:,.<>?/~`). Auto-generated passwords always satisfy these.
+
 ## API
-| Method | Path                          | Purpose                       |
-|--------|-------------------------------|-------------------------------|
-| GET    | `/api/health`                 | liveness                      |
-| GET    | `/api/data`                   | full state blob               |
-| POST   | `/api/data`                   | replace state (`{data:...}`)  |
-| GET    | `/api/attachments?task_id=X`  | list a task's files           |
-| POST   | `/api/attachments?task_id=X`  | multipart upload (max 25 MB)  |
-| GET    | `/api/attachments/<id>`       | download                      |
-| DELETE | `/api/attachments/<id>`       | remove                        |
-| GET    | `/api/backups`                | list snapshots (newest first) |
-| POST   | `/api/backups`                | create snapshot               |
-| GET    | `/api/backups/<id>`           | fetch snapshot                |
-| DELETE | `/api/backups/<id>`           | remove snapshot               |
+| Method | Path                          | Auth   | Purpose                       |
+|--------|-------------------------------|--------|-------------------------------|
+| GET    | `/api/health`                 | none   | liveness                      |
+| POST   | `/api/session`                | none   | login: `{username, password}` |
+| DELETE | `/api/session`                | none   | logout                        |
+| GET    | `/api/session`                | none   | whoami: `{authenticated, ...}`|
+| GET    | `/api/data`                   | user   | this user's board state       |
+| POST   | `/api/data`                   | user   | replace state                 |
+| GET    | `/api/attachments?task_id=X`  | user   | list this user's files for X  |
+| POST   | `/api/attachments?task_id=X`  | user   | multipart upload (max 25 MB)  |
+| GET    | `/api/attachments/<id>`       | user/admin | download (admin: any user) |
+| DELETE | `/api/attachments/<id>`       | user/admin | remove                  |
+| GET    | `/api/backups`                | user   | this user's snapshots         |
+| POST   | `/api/backups`                | user   | create snapshot               |
+| GET    | `/api/backups/<id>`           | user/admin | fetch snapshot          |
+| DELETE | `/api/backups/<id>`           | user/admin | remove                  |
+| GET    | `/api/users`                  | admin  | list users                    |
+| POST   | `/api/users`                  | admin  | create user                   |
+| PATCH  | `/api/users/<id>`             | admin  | role / is_active / password   |
+| DELETE | `/api/users/<id>`             | admin  | delete user + cascade their data |
+| GET    | `/api/admin/stats`            | admin  | counts + disk usage           |
 
 ## Configuration (env)
 | Var                          | Default                              |
@@ -47,33 +72,40 @@ deploy/       systemd unit, nginx server block, deploy.sh
 | `TASKBOARD_DB_PATH`          | `/var/lib/taskboard/data.db`         |
 | `TASKBOARD_FILES_DIR`        | `/var/lib/taskboard/files`           |
 | `TASKBOARD_MAX_UPLOAD_BYTES` | `26214400` (25 MB)                   |
+| `TASKBOARD_SECRET_KEY`       | (generated by `deploy.sh`, stored in `/etc/taskboard/env`) |
+| `TASKBOARD_SESSION_DAYS`     | `30`                                 |
 
 ## Deploy
 ```bash
 git pull
 ./deploy/deploy.sh
 ```
-Idempotent. Creates the `taskboard` system user, installs files into `/opt/taskboard`, `/var/www/taskboard`, `/var/lib/taskboard`, the systemd unit, and the nginx server block. Restarts the API and reloads nginx. Runs a health check.
+Idempotent. Creates `taskboard` system user, installs deps, generates secret key on first run, bootstraps admin user `admin` with a random password printed to `/var/log/taskboard-bootstrap.log`. Subsequent runs only update files and restart services.
 
-Reach it at `http://<host>:8083/`.
+## Admin CLI
+```bash
+sudo -u taskboard env $(grep ^TASKBOARD_ /etc/taskboard/env) python3 /opt/taskboard/cli.py user add alice
+sudo -u taskboard env $(grep ^TASKBOARD_ /etc/taskboard/env) python3 /opt/taskboard/cli.py user passwd alice
+sudo -u taskboard env $(grep ^TASKBOARD_ /etc/taskboard/env) python3 /opt/taskboard/cli.py user role alice admin
+sudo -u taskboard env $(grep ^TASKBOARD_ /etc/taskboard/env) python3 /opt/taskboard/cli.py user disable alice
+```
+Or, if the admin is logged in via the web, just use `/admin.html` — same operations.
 
 ## Development
 ```bash
-# install deps
-pip install -r backend/requirements.txt
-pip install ruff pytest
-
-# tests
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt ruff pytest
+ruff check backend
 pytest
 
-# run locally (sqlite + files in current dir)
-TASKBOARD_DB_PATH=./dev.db TASKBOARD_FILES_DIR=./dev-files \
+TASKBOARD_DB_PATH=./dev.db TASKBOARD_FILES_DIR=./dev-files TASKBOARD_SECRET_KEY=$(python -c 'import secrets;print(secrets.token_hex(32))') \
   python -m flask --app backend/api.py run --port 5050
+# then in another shell:
+TASKBOARD_DB_PATH=./dev.db python backend/cli.py bootstrap --username admin
 ```
 
 ## Backup
-Single SQLite file plus the file blob tree:
 ```bash
 rsync -a /var/lib/taskboard/ /backup/target/
 ```
-Or use the in-app "Save snapshot to server" — stored in the same DB.
+Single SQLite file + content-addressed blob tree. Or use the in-app "Save snapshot to server" — stored in the same DB.
