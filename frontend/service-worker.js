@@ -3,7 +3,7 @@
 // fallback when the device is offline.
 //
 // Bump SHELL_VERSION to invalidate the shell cache on the next page load.
-const SHELL_VERSION = 'v1';
+const SHELL_VERSION = 'v2';
 const SHELL_CACHE = `taskboard-shell-${SHELL_VERSION}`;
 const CDN_CACHE   = `taskboard-cdn-${SHELL_VERSION}`;
 
