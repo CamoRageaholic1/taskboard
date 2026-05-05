@@ -59,6 +59,55 @@
     --shadow-md: 0 4px 12px rgba(0,0,0,0.35), 0 1px 3px rgba(0,0,0,0.25);
     --shadow-lg: 0 12px 32px rgba(0,0,0,0.5), 0 2px 6px rgba(0,0,0,0.3);
   }
+  /* Neon — black backdrop, neon-green primary, orange secondary, pink highlights.
+     Matches the home-screen icon. Toggle cycles light → dark → neon. */
+  [data-theme="neon"] {
+    --bg: #0a0a0a;
+    --surface: #121211;
+    --surface-2: #1a1a18;
+    --border: #1f2a1f;
+    --border-strong: #335533;
+    --ink: #e8ffe8;
+    --ink-2: #a8d8a8;
+    --ink-3: #6a7d68;
+    --ink-4: #3a4238;
+    --accent: #39ff14;          /* neon green: primary */
+    --accent-soft: #88ff66;
+    --accent-bg: rgba(57, 255, 20, 0.10);
+    --danger: #ff2a6d;          /* hot pink: errors / overdue */
+    --success: #39ff14;
+    --warning: #ff8c00;         /* neon orange: secondary / mid priority */
+    --shadow-sm: 0 1px 0 rgba(0,0,0,0.5), 0 0 8px rgba(57, 255, 20, 0.05);
+    --shadow-md: 0 4px 14px rgba(0,0,0,0.55), 0 0 16px rgba(57, 255, 20, 0.08);
+    --shadow-lg: 0 12px 32px rgba(0,0,0,0.7), 0 0 28px rgba(57, 255, 20, 0.10);
+  }
+  [data-theme="neon"] .btn-primary {
+    background: var(--accent); border-color: var(--accent); color: #001a00;
+  }
+  [data-theme="neon"] .btn-primary:hover { background: var(--accent-soft); border-color: var(--accent-soft); }
+  [data-theme="neon"] .task-checkbox.checked,
+  [data-theme="neon"] .subtask-checkbox.checked {
+    background: var(--accent); border-color: var(--accent); color: #001a00;
+  }
+  [data-theme="neon"] .palette-overlay { background: rgba(0,0,0,0.7); }
+  [data-theme="neon"] .nav-item.active { box-shadow: inset 2px 0 0 var(--accent); }
+  [data-theme="neon"] .filter-tab.active { color: var(--accent); border-color: var(--accent); }
+  [data-theme="neon"] .filter-tab.active .num { color: var(--warning); }
+  [data-theme="neon"] .markdown-body code {
+    background: rgba(57, 255, 20, 0.08); color: var(--accent);
+  }
+  [data-theme="neon"] .markdown-body .tag-link {
+    background: rgba(255, 42, 109, 0.18); color: var(--danger);
+  }
+  [data-theme="neon"] .markdown-body .wikilink {
+    color: var(--accent); border-bottom-color: var(--accent);
+  }
+  [data-theme="neon"] kbd { color: var(--accent); }
+  [data-theme="neon"] .task.expanded {
+    box-shadow: 0 0 0 1px var(--accent), 0 0 24px rgba(57,255,20,0.12);
+  }
+  [data-theme="neon"] .note-row.active { border-left-color: var(--accent); }
+  [data-theme="neon"] .nr-pin { color: var(--warning) !important; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; }
   body {
@@ -1289,7 +1338,13 @@ const Icon = {
   Upload: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
   Drag: () => <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="8" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>,
   Repeat: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
+  Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
 };
+
+// Theme cycle: light → dark → neon → light. Persisted via loadTheme/saveTheme.
+const THEMES = ['light', 'dark', 'neon'];
+const THEME_LABELS = { light: 'Light', dark: 'Dark', neon: 'Neon' };
+const THEME_BG = { light: '#f6f4ef', dark: '#14130f', neon: '#0a0a0a' };
 
 // ---------- Storage ----------
 const STORAGE_KEY = 'task-board-data-v1';
@@ -1671,9 +1726,18 @@ function CommandPalette({ data, onClose, onAction }) {
 // ---------- Components ----------
 
 function ThemeToggle({ theme, setTheme }) {
+  const idx = Math.max(0, THEMES.indexOf(theme));
+  const next = THEMES[(idx + 1) % THEMES.length];
+  // Icon shows what you'll switch TO, like the original 2-way did.
+  const icon = next === 'dark' ? <Icon.Moon/> : next === 'neon' ? <Icon.Zap/> : <Icon.Sun/>;
   return (
-    <button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} title="Toggle theme" aria-label="Toggle theme">
-      {theme === 'light' ? <Icon.Moon/> : <Icon.Sun/>}
+    <button
+      className="theme-toggle"
+      onClick={() => setTheme(next)}
+      title={`Theme: ${THEME_LABELS[theme] || theme} → ${THEME_LABELS[next]}`}
+      aria-label="Cycle theme"
+    >
+      {icon}
     </button>
   );
 }
@@ -4358,6 +4422,17 @@ function App() {
   useEffect(() => {
     saveTheme(theme);
     document.documentElement.setAttribute('data-theme', theme);
+    // Sync the iOS / Android standalone-mode status-bar tint to the active theme.
+    // The two media-queried meta tags only cover light/dark; for "neon" we
+    // override here. Removing the media-queried tags first so the no-media
+    // tag we add takes precedence.
+    const head = document.head;
+    head.querySelectorAll('meta[name="theme-color"][data-dynamic]').forEach(el => el.remove());
+    const tag = document.createElement('meta');
+    tag.setAttribute('name', 'theme-color');
+    tag.setAttribute('content', THEME_BG[theme] || THEME_BG.light);
+    tag.setAttribute('data-dynamic', '1');
+    head.appendChild(tag);
   }, [theme]);
 
   const [paletteOpen, setPaletteOpen] = useState(false);
