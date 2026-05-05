@@ -138,4 +138,30 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 5)
         version = 5
 
+    if version < 6:
+        # v5 -> v6: notebooks + per-note pinning / ordering / notebook membership
+        conn.executescript("""
+        CREATE TABLE IF NOT EXISTS notebooks (
+          id TEXT PRIMARY KEY,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          name TEXT NOT NULL,
+          color TEXT NOT NULL DEFAULT '#c1542a',
+          icon TEXT NOT NULL DEFAULT 'book',
+          sort_order INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_notebooks_user ON notebooks(user_id);
+        """)
+        ncols = _table_columns(conn, "notes")
+        if "pinned" not in ncols:
+            conn.execute("ALTER TABLE notes ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
+        if "sort_order" not in ncols:
+            conn.execute("ALTER TABLE notes ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0")
+        if "notebook_id" not in ncols:
+            conn.execute("ALTER TABLE notes ADD COLUMN notebook_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_notebook ON notes(user_id, notebook_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_pinned ON notes(user_id, pinned)")
+        _set_schema_version(conn, 6)
+        version = 6
+
     return version

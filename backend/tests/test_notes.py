@@ -14,6 +14,8 @@ def test_create_list_update_delete_round_trip(client):
     assert r.json["title"] == "scratch"
     assert r.json["body"].startswith("# hi")
     assert r.json["date"]  # default date set
+    assert r.json["pinned"] is False
+    assert r.json["notebook_id"] is None
 
     # List for today returns it
     today = r.json["date"]

@@ -378,9 +378,11 @@ def delete_backup(bid):
     return jsonify(ok=True)
 
 
-# ---------- notes (per-user daily capture pad) ----------
+# ---------- notes (per-user daily capture pad + freeform notebooks) ----------
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_TAG_RE = re.compile(r"(?<![\w/])#([A-Za-z0-9][\w-]{0,63})")
+_WIKILINK_RE = re.compile(r"\[\[([^\[\]\n]{1,200})\]\]")
 
 
 def _today_iso() -> str:
@@ -388,26 +390,89 @@ def _today_iso() -> str:
 
 
 def _note_dict(row):
+    # row order: id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id
     return {
         "id": row[0], "date": row[1], "title": row[2], "body": row[3],
         "created_at": row[4], "updated_at": row[5],
+        "pinned": bool(row[6]) if len(row) > 6 else False,
+        "sort_order": row[7] if len(row) > 7 else 0,
+        "notebook_id": row[8] if len(row) > 8 else None,
     }
+
+
+_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id"
+
+
+def _extract_tags(body: str) -> list[str]:
+    if not body:
+        return []
+    seen, out = set(), []
+    for m in _TAG_RE.finditer(body):
+        t = m.group(1).lower()
+        if t not in seen:
+            seen.add(t)
+            out.append(t)
+    return out
 
 
 @APP.get("/api/notes")
 @require_user
 def list_notes():
-    date = request.args.get("date") or _today_iso()
-    if not _DATE_RE.match(date):
-        return jsonify(error="date must be YYYY-MM-DD"), 400
+    """Three modes:
+       - default: notes for ?date=YYYY-MM-DD (today if omitted) where notebook_id IS NULL
+       - ?notebook_id=X: all notes in that notebook
+       - ?all=1: all notes, newest-updated first (paginated by ?limit=&offset=)
+       - ?pinned=1: only pinned notes
+       - ?tag=foo: notes whose body contains #foo (case-insensitive)
+       - ?q=...: brute-force title/body match (lightweight)
+    """
     uid = current_user_id()
+    notebook_id = request.args.get("notebook_id")
+    all_flag = request.args.get("all") == "1"
+    pinned_flag = request.args.get("pinned") == "1"
+    tag = request.args.get("tag")
+    q = request.args.get("q")
+    limit = max(1, min(int(request.args.get("limit") or 500), 500))
+    offset = max(0, int(request.args.get("offset") or 0))
+
+    where = ["user_id=?"]
+    params: list = [uid]
+    order = "ORDER BY pinned DESC, sort_order, created_at"
+
+    if all_flag:
+        order = "ORDER BY pinned DESC, updated_at DESC"
+    elif pinned_flag:
+        where.append("pinned=1")
+        order = "ORDER BY updated_at DESC"
+    elif notebook_id:
+        where.append("notebook_id=?")
+        params.append(notebook_id)
+    elif tag:
+        # We can't index this — full-scan + Python filter (capped by date filter if any)
+        where.append("notebook_id IS NULL OR notebook_id IS NOT NULL")  # noop, tag filter applied below
+    else:
+        date = request.args.get("date") or _today_iso()
+        if not _DATE_RE.match(date):
+            return jsonify(error="date must be YYYY-MM-DD"), 400
+        where.append("date=?")
+        where.append("notebook_id IS NULL")
+        params.append(date)
+
+    if q:
+        ql = f"%{q.lower()}%"
+        where.append("(LOWER(title) LIKE ? OR LOWER(body) LIKE ?)")
+        params += [ql, ql]
+
+    sql = f"SELECT {_NOTE_COLS} FROM notes WHERE " + " AND ".join(where) + f" {order} LIMIT ? OFFSET ?"
+    params += [limit, offset]
     with db() as conn:
-        rows = conn.execute(
-            "SELECT id,date,title,body,created_at,updated_at FROM notes "
-            "WHERE user_id=? AND date=? ORDER BY created_at",
-            (uid, date),
-        ).fetchall()
-    return jsonify([_note_dict(r) for r in rows])
+        rows = conn.execute(sql, params).fetchall()
+
+    notes = [_note_dict(r) for r in rows]
+    if tag:
+        tlow = tag.lower()
+        notes = [n for n in notes if tlow in {t for t in _extract_tags(n["body"])}]
+    return jsonify(notes)
 
 
 @APP.get("/api/notes/dates")
@@ -416,32 +481,158 @@ def list_note_dates():
     uid = current_user_id()
     with db() as conn:
         rows = conn.execute(
-            "SELECT date, COUNT(*) FROM notes WHERE user_id=? GROUP BY date ORDER BY date DESC LIMIT 365",
+            "SELECT date, COUNT(*) FROM notes WHERE user_id=? AND notebook_id IS NULL "
+            "GROUP BY date ORDER BY date DESC LIMIT 365",
             (uid,),
         ).fetchall()
     return jsonify([{"date": r[0], "count": r[1]} for r in rows])
+
+
+@APP.get("/api/notes/tags")
+@require_user
+def list_tags():
+    """Distinct tags across this user's notes, sorted by count desc."""
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT body FROM notes WHERE user_id=?", (uid,)
+        ).fetchall()
+    counts: dict[str, int] = {}
+    for (body,) in rows:
+        for t in _extract_tags(body or ""):
+            counts[t] = counts.get(t, 0) + 1
+    return jsonify(sorted(
+        [{"tag": k, "count": v} for k, v in counts.items()],
+        key=lambda r: (-r["count"], r["tag"]),
+    ))
+
+
+@APP.get("/api/notes/<note_id>")
+@require_user
+def get_note(note_id):
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT {_NOTE_COLS} FROM notes WHERE id=? AND user_id=?",
+            (note_id, uid),
+        ).fetchone()
+    if not row:
+        return jsonify(error="not found"), 404
+    return jsonify(_note_dict(row))
+
+
+@APP.get("/api/notes/<note_id>/backlinks")
+@require_user
+def note_backlinks(note_id):
+    """Notes whose body contains [[<this note's title>]]."""
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT title FROM notes WHERE id=? AND user_id=?", (note_id, uid)
+        ).fetchone()
+        if not row:
+            return jsonify(error="not found"), 404
+        title = (row[0] or "").strip()
+        if not title:
+            return jsonify([])
+        # Case-insensitive substring match for [[title]] — Python filters precise hits.
+        candidate = conn.execute(
+            f"SELECT {_NOTE_COLS} FROM notes WHERE user_id=? AND id<>? AND LOWER(body) LIKE ?",
+            (uid, note_id, f"%[[{title.lower()}%"),
+        ).fetchall()
+    out = []
+    tlow = title.lower()
+    for r in candidate:
+        body = r[3] or ""
+        for m in _WIKILINK_RE.finditer(body):
+            if m.group(1).strip().lower() == tlow:
+                out.append(_note_dict(r))
+                break
+    return jsonify(out)
+
+
+@APP.get("/api/notes/by-title")
+@require_user
+def find_note_by_title():
+    """Resolve a wiki-link target. Case-insensitive exact title match; first hit wins."""
+    title = (request.args.get("title") or "").strip()
+    if not title:
+        return jsonify(error="missing title"), 400
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT {_NOTE_COLS} FROM notes WHERE user_id=? AND LOWER(title)=? "
+            "ORDER BY updated_at DESC LIMIT 1",
+            (uid, title.lower()),
+        ).fetchone()
+    if not row:
+        return jsonify(error="not found"), 404
+    return jsonify(_note_dict(row))
+
+
+@APP.get("/api/notes/titles")
+@require_user
+def list_note_titles():
+    """For wiki-link autocomplete: lightweight list of titles."""
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT id,title,date FROM notes WHERE user_id=? AND title<>'' "
+            "ORDER BY updated_at DESC LIMIT 500",
+            (uid,),
+        ).fetchall()
+    return jsonify([{"id": r[0], "title": r[1], "date": r[2]} for r in rows])
 
 
 @APP.post("/api/notes")
 @require_user
 def create_note():
     payload = request.get_json(silent=True) or {}
-    date = payload.get("date") or _today_iso()
+    notebook_id = payload.get("notebook_id")
+    if notebook_id == "":
+        notebook_id = None
+    uid = current_user_id()
+
+    if notebook_id:
+        # Validate notebook ownership
+        with db() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM notebooks WHERE id=? AND user_id=?", (notebook_id, uid)
+            ).fetchone()
+        if not row:
+            return jsonify(error="notebook not found"), 404
+        date = payload.get("date") or _today_iso()
+    else:
+        date = payload.get("date") or _today_iso()
     if not _DATE_RE.match(date):
         return jsonify(error="date must be YYYY-MM-DD"), 400
     title = (payload.get("title") or "")[:300]
     body = (payload.get("body") or "")[:50_000]
+    pinned = 1 if payload.get("pinned") else 0
     nid = short_id()
     ts = now_iso()
-    uid = current_user_id()
     with db() as conn:
+        # Place at end of current bucket (highest sort_order + 1)
+        if notebook_id:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(sort_order),0)+1 FROM notes WHERE user_id=? AND notebook_id=?",
+                (uid, notebook_id),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COALESCE(MAX(sort_order),0)+1 FROM notes WHERE user_id=? AND date=? AND notebook_id IS NULL",
+                (uid, date),
+            ).fetchone()
+        sort_order = row[0] if row else 0
         conn.execute(
-            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at) "
-            "VALUES(?,?,?,?,?,?,?)",
-            (nid, uid, date, title, body, ts, ts),
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, date, title, body, ts, ts, pinned, sort_order, notebook_id),
         )
-    return jsonify(id=nid, date=date, title=title, body=body,
-                   created_at=ts, updated_at=ts), 201
+        row = conn.execute(
+            f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)
+        ).fetchone()
+    return jsonify(_note_dict(row)), 201
 
 
 @APP.patch("/api/notes/<note_id>")
@@ -460,6 +651,23 @@ def update_note(note_id):
             return jsonify(error="date must be YYYY-MM-DD"), 400
         sets.append("date=?")
         params.append(payload["date"])
+    if "pinned" in payload:
+        sets.append("pinned=?")
+        params.append(1 if payload["pinned"] else 0)
+    if "notebook_id" in payload:
+        nb = payload["notebook_id"]
+        if nb in ("", None):
+            sets.append("notebook_id=NULL")
+        else:
+            uid = current_user_id()
+            with db() as conn:
+                ok = conn.execute(
+                    "SELECT 1 FROM notebooks WHERE id=? AND user_id=?", (nb, uid)
+                ).fetchone()
+            if not ok:
+                return jsonify(error="notebook not found"), 404
+            sets.append("notebook_id=?")
+            params.append(nb)
     if not sets:
         return jsonify(error="no fields to update"), 400
     sets.append("updated_at=?")
@@ -473,7 +681,7 @@ def update_note(note_id):
         if cur.rowcount == 0:
             return jsonify(error="not found"), 404
         row = conn.execute(
-            "SELECT id,date,title,body,created_at,updated_at FROM notes WHERE id=?", (note_id,)
+            f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (note_id,)
         ).fetchone()
     return jsonify(_note_dict(row))
 
@@ -487,6 +695,213 @@ def delete_note(note_id):
         if cur.rowcount == 0:
             return jsonify(error="not found"), 404
     return jsonify(ok=True)
+
+
+@APP.post("/api/notes/reorder")
+@require_user
+def reorder_notes():
+    """Body: {ids: ["a","b","c"]} — assigns sort_order = index in that array.
+    All notes must belong to the caller; otherwise 404."""
+    payload = request.get_json(silent=True) or {}
+    ids = payload.get("ids") or []
+    if not isinstance(ids, list) or not all(isinstance(x, str) for x in ids):
+        return jsonify(error="ids must be a list of strings"), 400
+    uid = current_user_id()
+    ts = now_iso()
+    with db() as conn:
+        for i, nid in enumerate(ids):
+            cur = conn.execute(
+                "UPDATE notes SET sort_order=?, updated_at=? WHERE id=? AND user_id=?",
+                (i, ts, nid, uid),
+            )
+            if cur.rowcount == 0:
+                return jsonify(error=f"note {nid} not found"), 404
+    return jsonify(ok=True, count=len(ids))
+
+
+@APP.post("/api/notes/<note_id>/duplicate")
+@require_user
+def duplicate_note(note_id):
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            f"SELECT {_NOTE_COLS} FROM notes WHERE id=? AND user_id=?",
+            (note_id, uid),
+        ).fetchone()
+        if not row:
+            return jsonify(error="not found"), 404
+        nid = short_id()
+        ts = now_iso()
+        new_title = (row[2] or "Untitled") + " (copy)"
+        conn.execute(
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, row[1], new_title, row[3], ts, ts, 0, (row[7] or 0) + 1, row[8]),
+        )
+        new_row = conn.execute(f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)).fetchone()
+    return jsonify(_note_dict(new_row)), 201
+
+
+# ---------- notebooks ----------
+
+def _notebook_dict(row, count=None):
+    out = {
+        "id": row[0], "name": row[1], "color": row[2], "icon": row[3],
+        "sort_order": row[4], "created_at": row[5],
+    }
+    if count is not None:
+        out["count"] = count
+    return out
+
+
+@APP.get("/api/notebooks")
+@require_user
+def list_notebooks():
+    uid = current_user_id()
+    with db() as conn:
+        rows = conn.execute(
+            "SELECT n.id,n.name,n.color,n.icon,n.sort_order,n.created_at,"
+            "(SELECT COUNT(*) FROM notes WHERE notebook_id=n.id) "
+            "FROM notebooks n WHERE n.user_id=? ORDER BY n.sort_order,n.created_at",
+            (uid,),
+        ).fetchall()
+    return jsonify([_notebook_dict(r[:6], r[6]) for r in rows])
+
+
+@APP.post("/api/notebooks")
+@require_user
+def create_notebook():
+    payload = request.get_json(silent=True) or {}
+    name = (payload.get("name") or "").strip()[:120]
+    if not name:
+        return jsonify(error="name required"), 400
+    color = (payload.get("color") or "#c1542a")[:32]
+    icon = (payload.get("icon") or "book")[:32]
+    nid = short_id()
+    ts = now_iso()
+    uid = current_user_id()
+    with db() as conn:
+        sort_order = conn.execute(
+            "SELECT COALESCE(MAX(sort_order),0)+1 FROM notebooks WHERE user_id=?", (uid,)
+        ).fetchone()[0]
+        conn.execute(
+            "INSERT INTO notebooks(id,user_id,name,color,icon,sort_order,created_at) "
+            "VALUES(?,?,?,?,?,?,?)",
+            (nid, uid, name, color, icon, sort_order, ts),
+        )
+    return jsonify(_notebook_dict((nid, name, color, icon, sort_order, ts), 0)), 201
+
+
+@APP.patch("/api/notebooks/<nb_id>")
+@require_user
+def update_notebook(nb_id):
+    payload = request.get_json(silent=True) or {}
+    sets, params = [], []
+    if "name" in payload:
+        n = (payload["name"] or "").strip()[:120]
+        if not n:
+            return jsonify(error="name required"), 400
+        sets.append("name=?")
+        params.append(n)
+    if "color" in payload:
+        sets.append("color=?")
+        params.append(str(payload["color"])[:32])
+    if "icon" in payload:
+        sets.append("icon=?")
+        params.append(str(payload["icon"])[:32])
+    if "sort_order" in payload:
+        sets.append("sort_order=?")
+        params.append(int(payload["sort_order"]))
+    if not sets:
+        return jsonify(error="no fields to update"), 400
+    uid = current_user_id()
+    params.extend([nb_id, uid])
+    with db() as conn:
+        cur = conn.execute(
+            f"UPDATE notebooks SET {', '.join(sets)} WHERE id=? AND user_id=?", params
+        )
+        if cur.rowcount == 0:
+            return jsonify(error="not found"), 404
+        row = conn.execute(
+            "SELECT id,name,color,icon,sort_order,created_at FROM notebooks WHERE id=?", (nb_id,)
+        ).fetchone()
+    return jsonify(_notebook_dict(row))
+
+
+@APP.delete("/api/notebooks/<nb_id>")
+@require_user
+def delete_notebook(nb_id):
+    """Deleting a notebook un-files its notes back to NULL — does NOT delete them."""
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM notebooks WHERE id=? AND user_id=?", (nb_id, uid)
+        ).fetchone()
+        if not row:
+            return jsonify(error="not found"), 404
+        conn.execute(
+            "UPDATE notes SET notebook_id=NULL WHERE notebook_id=? AND user_id=?",
+            (nb_id, uid),
+        )
+        conn.execute("DELETE FROM notebooks WHERE id=? AND user_id=?", (nb_id, uid))
+    return jsonify(ok=True)
+
+
+# ---------- note image upload (reuses the content-addressed blob store) ----------
+
+@APP.post("/api/notes/<note_id>/images")
+@require_user
+def upload_note_image(note_id):
+    """Multipart upload an image to be embedded in a note. Returns {url, id}."""
+    uid = current_user_id()
+    with db() as conn:
+        row = conn.execute(
+            "SELECT 1 FROM notes WHERE id=? AND user_id=?", (note_id, uid)
+        ).fetchone()
+    if not row:
+        return jsonify(error="not found"), 404
+    f = request.files.get("file")
+    if f is None or not f.filename:
+        return jsonify(error="missing file"), 400
+    mime = f.mimetype or "application/octet-stream"
+    if not mime.startswith("image/"):
+        return jsonify(error="must be image/*"), 400
+
+    h = hashlib.sha256()
+    size = 0
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=FILES_DIR / "tmp")
+    try:
+        with os.fdopen(tmp_fd, "wb") as out:
+            while True:
+                chunk = f.stream.read(65536)
+                if not chunk:
+                    break
+                size += len(chunk)
+                if size > MAX_UPLOAD_BYTES:
+                    return jsonify(error="file exceeds limit"), 413
+                h.update(chunk)
+                out.write(chunk)
+        if size == 0:
+            return jsonify(error="empty file"), 400
+        sha = h.hexdigest()
+        dest = file_path_for(sha)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if not dest.exists():
+            os.replace(tmp_path, dest)
+            tmp_path = None
+        att_id = short_id()
+        ts = now_iso()
+        with db() as conn:
+            conn.execute(
+                "INSERT INTO attachments(id,user_id,task_id,filename,mime,size,sha256,uploaded_at) "
+                "VALUES(?,?,?,?,?,?,?,?)",
+                (att_id, uid, f"note:{note_id}", f.filename, mime, size, sha, ts),
+            )
+        return jsonify(id=att_id, url=f"/api/attachments/{att_id}",
+                       filename=f.filename, mime=mime, size=size), 201
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
 
 
 def _markdown_for_day(date: str, rows) -> str:
@@ -921,6 +1336,8 @@ def delete_user(uid):
         conn.execute("DELETE FROM state WHERE user_id=?", (uid,))
         conn.execute("DELETE FROM attachments WHERE user_id=?", (uid,))
         conn.execute("DELETE FROM backups WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM notes WHERE user_id=?", (uid,))
+        conn.execute("DELETE FROM notebooks WHERE user_id=?", (uid,))
         cur = conn.execute("DELETE FROM users WHERE id=?", (uid,))
         if cur.rowcount == 0:
             return jsonify(error="not found"), 404

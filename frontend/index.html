@@ -895,6 +895,349 @@
   .markdown-body table { border-collapse: collapse; margin: 8px 0; }
   .markdown-body th, .markdown-body td { border: 1px solid var(--border); padding: 4px 8px; }
   .markdown-body img { max-width: 100%; border-radius: 6px; }
+  .markdown-body input[type="checkbox"] { margin: 0 6px 0 0; vertical-align: middle; cursor: pointer; }
+  .markdown-body li.task-list-item, .markdown-body ul:has(> li > input[type="checkbox"]) { list-style: none; }
+  .markdown-body .wikilink {
+    color: var(--accent); border-bottom: 1px dashed currentColor; cursor: pointer;
+    text-decoration: none;
+  }
+  .markdown-body .wikilink.broken {
+    color: var(--ink-3); border-bottom-style: dotted; opacity: 0.85;
+  }
+  .markdown-body .tag-link {
+    color: var(--accent); cursor: pointer; text-decoration: none;
+    background: var(--accent-bg); padding: 0 4px; border-radius: 4px;
+  }
+  .markdown-body .hljs { background: transparent; padding: 0; }
+
+  /* ---------- Notes v6: shell + rail + tabs + editor ---------- */
+  .notes-shell {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .notes-shell.no-rail { grid-template-columns: 0 1fr; }
+  .notes-rail {
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .rail-scope {
+    padding: 10px 8px 6px;
+    border-bottom: 1px solid var(--border);
+    overflow-y: auto;
+    max-height: 50%;
+  }
+  .rail-scope::-webkit-scrollbar, .rail-list::-webkit-scrollbar { width: 6px; }
+  .rail-scope::-webkit-scrollbar-thumb, .rail-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .rail-section { margin-bottom: 8px; }
+  .rail-section .section-label {
+    font-family: 'IBM Plex Mono', monospace; font-size: 9.5px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-3); padding: 6px 10px 4px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .rail-section .section-label .add-mini {
+    background: transparent; border: none; color: var(--ink-3);
+    cursor: pointer; padding: 0 2px; font-family: inherit; font-size: 14px;
+  }
+  .rail-section .section-label .add-mini:hover { color: var(--ink); }
+  .rail-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 10px; border-radius: 6px; cursor: pointer;
+    color: var(--ink-2); font-size: 12.5px; user-select: none;
+    border: 1px solid transparent;
+  }
+  .rail-item:hover { background: var(--surface-2); color: var(--ink); }
+  .rail-item.active { background: var(--surface-2); color: var(--ink); border-color: var(--border); }
+  .rail-item .ri-icon { width: 14px; flex-shrink: 0; display: grid; place-items: center; color: var(--ink-3); }
+  .rail-item .ri-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rail-item .ri-count { font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: var(--ink-4); }
+  .rail-item .ri-color { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .rail-item .ri-actions { opacity: 0; display: flex; gap: 2px; transition: opacity 0.12s; }
+  .rail-item:hover .ri-actions { opacity: 1; }
+
+  .rail-list-header {
+    padding: 8px 10px;
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .rail-search {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-family: inherit;
+    font-size: 12px;
+    color: var(--ink);
+    outline: none;
+  }
+  .rail-search:focus { border-color: var(--ink-3); }
+  .rail-list { flex: 1; overflow-y: auto; padding: 4px; min-height: 0; }
+  .note-row {
+    display: flex; flex-direction: column;
+    padding: 8px 10px; border-radius: 6px;
+    cursor: pointer; gap: 2px;
+    border-left: 2px solid transparent;
+    user-select: none;
+  }
+  .note-row:hover { background: var(--surface-2); }
+  .note-row.active { background: var(--surface-2); border-left-color: var(--accent); }
+  .note-row.dragging { opacity: 0.4; }
+  .note-row.drop-above { box-shadow: inset 0 2px 0 var(--accent); }
+  .note-row.drop-below { box-shadow: inset 0 -2px 0 var(--accent); }
+  .note-row .nr-top { display: flex; align-items: center; gap: 6px; }
+  .note-row .nr-title {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; font-size: 13px; font-weight: 500; color: var(--ink);
+  }
+  .note-row.untitled .nr-title { color: var(--ink-3); font-weight: 400; font-style: italic; }
+  .note-row .nr-pin { color: var(--warning); }
+  .note-row .nr-meta {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--ink-3); display: flex; gap: 6px;
+  }
+  .note-row .nr-snippet {
+    font-size: 11.5px; color: var(--ink-3);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  /* tabs across open notes */
+  .note-tabs {
+    display: flex;
+    gap: 2px;
+    padding: 6px 12px 0;
+    border-bottom: 1px solid var(--border);
+    overflow-x: auto;
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .note-tabs::-webkit-scrollbar { height: 4px; }
+  .note-tab {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 10px;
+    border-radius: 6px 6px 0 0;
+    cursor: pointer; font-size: 12px;
+    color: var(--ink-3);
+    border: 1px solid transparent;
+    border-bottom: none;
+    margin-bottom: -1px;
+    max-width: 200px;
+    flex-shrink: 0;
+  }
+  .note-tab:hover { color: var(--ink-2); background: var(--surface); }
+  .note-tab.active {
+    color: var(--ink); background: var(--surface);
+    border-color: var(--border);
+  }
+  .note-tab .nt-title {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+  }
+  .note-tab .nt-close {
+    background: transparent; border: none; color: var(--ink-4);
+    cursor: pointer; padding: 0 2px; line-height: 1; opacity: 0;
+    transition: opacity 0.12s;
+  }
+  .note-tab:hover .nt-close, .note-tab.active .nt-close { opacity: 1; }
+  .note-tab .nt-close:hover { color: var(--ink); }
+
+  /* editor toolbar */
+  .editor-shell {
+    display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0;
+    background: var(--bg);
+  }
+  .editor-toolbar {
+    display: flex; gap: 4px;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-wrap: wrap; align-items: center;
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .editor-toolbar button {
+    background: transparent; border: 1px solid transparent;
+    color: var(--ink-3); padding: 4px 8px; border-radius: 5px;
+    cursor: pointer; font: inherit; font-size: 11.5px;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .editor-toolbar button:hover { background: var(--surface-2); color: var(--ink); border-color: var(--border); }
+  .editor-toolbar button.active { color: var(--ink); background: var(--surface-2); border-color: var(--border); }
+  .editor-toolbar .sep { width: 1px; background: var(--border); margin: 2px 4px; align-self: stretch; }
+  .editor-toolbar .toolbar-spacer { flex: 1; }
+  .editor-toolbar .title-input {
+    flex: 1; max-width: 360px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: 5px; padding: 4px 8px;
+    font: inherit; font-size: 14px; font-weight: 600; color: var(--ink);
+    outline: none;
+  }
+  .editor-toolbar .title-input:hover, .editor-toolbar .title-input:focus {
+    border-color: var(--border); background: var(--bg);
+  }
+
+  .editor-pane {
+    display: grid;
+    grid-template-rows: minmax(0, 1fr);
+    flex: 1; min-height: 0;
+  }
+  .editor-pane.split-edit { grid-template-columns: 1fr; }
+  .editor-pane.split-preview { grid-template-columns: 1fr; }
+  .editor-pane.split-both { grid-template-columns: 1fr 1fr; }
+  .editor-pane.split-2up { grid-template-columns: 1fr 1fr; }
+  .editor-pane > .editor-textarea-wrap {
+    overflow: auto; min-height: 0; min-width: 0;
+    position: relative; /* for image-drop overlay ::after */
+  }
+  .editor-pane > .editor-preview-wrap { overflow: auto; min-height: 0; min-width: 0; }
+  .editor-pane.split-preview > .editor-textarea-wrap { display: none; }
+  .editor-pane.split-edit > .editor-preview-wrap { display: none; }
+  .editor-textarea {
+    width: 100%; min-height: 100%; resize: none;
+    padding: 18px 24px;
+    background: var(--bg); border: none; outline: none;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 13px; line-height: 1.7; color: var(--ink);
+    white-space: pre-wrap;
+  }
+  .editor-textarea.font-sans { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+  .editor-textarea.font-serif { font-family: 'Fraunces', Georgia, serif; line-height: 1.7; }
+  .editor-preview {
+    padding: 18px 28px; background: var(--surface);
+    border-left: 1px solid var(--border);
+    color: var(--ink); line-height: 1.65; font-size: 14px;
+  }
+  .editor-pane.split-preview > .editor-preview-wrap > .editor-preview { border-left: none; }
+  .editor-pane.split-2up > .editor-textarea-wrap + .editor-textarea-wrap > .editor-textarea {
+    border-left: 1px solid var(--border);
+  }
+
+  .note-statusbar {
+    display: flex; gap: 14px; padding: 4px 14px;
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--ink-4);
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .note-statusbar .status-spacer { flex: 1; }
+  .note-statusbar .saved { color: var(--success); }
+  .note-statusbar .saving { color: var(--warning); }
+  .note-statusbar .error { color: var(--danger); }
+
+  .backlinks-panel {
+    border-top: 1px solid var(--border);
+    padding: 12px 18px;
+    background: var(--surface);
+    max-height: 200px; overflow-y: auto;
+    flex-shrink: 0;
+  }
+  .backlinks-panel .bp-title {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--ink-3); margin-bottom: 8px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .backlinks-panel .bp-row {
+    padding: 6px 10px; border-radius: 6px;
+    cursor: pointer; font-size: 12.5px; color: var(--ink-2);
+    display: flex; align-items: center; gap: 8px;
+  }
+  .backlinks-panel .bp-row:hover { background: var(--surface-2); color: var(--ink); }
+  .backlinks-panel .bp-meta {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--ink-4); margin-left: auto;
+  }
+  .backlinks-panel .bp-empty { color: var(--ink-4); font-size: 12px; padding: 4px 10px; }
+
+  /* tag chips */
+  .tag-chip {
+    display: inline-flex; align-items: center; gap: 3px;
+    padding: 1px 8px; border-radius: 999px;
+    background: var(--surface-2); border: 1px solid var(--border);
+    font-family: 'IBM Plex Mono', monospace; font-size: 10.5px;
+    color: var(--ink-2); cursor: pointer; user-select: none;
+  }
+  .tag-chip:hover { color: var(--accent); border-color: var(--accent-soft); }
+  .tag-chip.active { color: var(--accent); border-color: var(--accent); background: var(--accent-bg); }
+
+  /* slash menu / wiki menu / picker popover (positioned in viewport coords) */
+  .popover-menu {
+    position: fixed;
+    background: var(--surface);
+    border: 1px solid var(--border-strong);
+    border-radius: 8px;
+    box-shadow: var(--shadow-lg);
+    max-height: 280px; overflow-y: auto;
+    min-width: 240px; max-width: 360px;
+    z-index: 1000;
+    padding: 4px;
+  }
+  .popover-item {
+    padding: 6px 10px; border-radius: 6px;
+    cursor: pointer; display: flex; align-items: center; gap: 8px;
+    font-size: 12.5px; color: var(--ink-2);
+  }
+  .popover-item.selected { background: var(--surface-2); color: var(--ink); }
+  .popover-item .pi-icon { width: 14px; flex-shrink: 0; color: var(--ink-3); }
+  .popover-item .pi-label { flex: 1; }
+  .popover-item .pi-key {
+    font-family: 'IBM Plex Mono', monospace; font-size: 10px;
+    color: var(--ink-4);
+  }
+  .popover-item .pi-meta {
+    font-size: 10.5px; color: var(--ink-4);
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .popover-empty {
+    padding: 10px; color: var(--ink-3); font-size: 12px; text-align: center;
+  }
+
+  .notebook-color-swatch {
+    width: 14px; height: 14px; border-radius: 4px;
+    border: 1px solid var(--border-strong); cursor: pointer;
+  }
+  .notebook-color-swatch.selected {
+    box-shadow: 0 0 0 2px var(--accent);
+  }
+
+  /* Drag-and-drop image overlay */
+  .editor-textarea-wrap.dropzone-active::after {
+    content: 'Drop image to upload';
+    position: absolute; inset: 8px;
+    border: 2px dashed var(--accent);
+    border-radius: 8px;
+    background: rgba(193, 84, 42, 0.08);
+    color: var(--accent);
+    display: grid; place-items: center;
+    font-family: 'IBM Plex Mono', monospace; font-size: 13px;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  /* PDF print stylesheet */
+  @media print {
+    body, .app, .main, .notes-shell { background: white !important; color: black !important; overflow: visible !important; }
+    .sidebar, .notes-rail, .note-tabs, .editor-toolbar, .toast, .popover-menu,
+    .palette-overlay, .note-statusbar, .backlinks-panel,
+    .editor-textarea-wrap { display: none !important; }
+    .app { display: block !important; height: auto !important; }
+    .main, .notes-shell, .editor-shell, .editor-pane { display: block !important; height: auto !important; }
+    .editor-pane { grid-template-columns: 1fr !important; }
+    .editor-preview-wrap { overflow: visible !important; }
+    .editor-preview { padding: 0 !important; max-width: 720px !important; margin: 0 auto !important;
+      background: white !important; border: none !important; color: black !important; }
+    .markdown-body, .markdown-body * { color: black !important; }
+    .markdown-body code, .markdown-body pre { background: #f3f3f3 !important; }
+  }
 </style>
 </head>
 <body>
@@ -905,6 +1248,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.10.0/highlight.min.js" crossorigin="anonymous"></script>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
@@ -1546,16 +1890,469 @@ function SubtaskItem({ st, onToggle, onChange, onDelete, onEnter }) {
   );
 }
 
-function NoteCard({ note, onChange, onDelete }) {
+// ==========================================================================
+// Notes v6 — notebooks, pinning, drag-reorder, all-notes, tags, wiki-links,
+// backlinks, slash menu, splitscreen, image paste, code highlighting,
+// tabs, font picker, word count, PDF export, BroadcastChannel sync
+// ==========================================================================
+
+const NOTES_PREFS_KEY = 'taskboard-notes-prefs-v1';
+function loadNotesPrefs() {
+  try {
+    return {
+      font: 'mono', fontSize: 13, layout: 'split',
+      sortMode: 'manual', openTabs: [], split2up: false,
+      ...JSON.parse(localStorage.getItem(NOTES_PREFS_KEY) || '{}'),
+    };
+  } catch (e) {
+    return { font: 'mono', fontSize: 13, layout: 'split', sortMode: 'manual', openTabs: [], split2up: false };
+  }
+}
+function saveNotesPrefs(p) {
+  try { localStorage.setItem(NOTES_PREFS_KEY, JSON.stringify(p)); } catch (e) {}
+}
+
+const NOTES_CHANNEL = (() => {
+  try { return new BroadcastChannel('taskboard-notes'); } catch (e) { return null; }
+})();
+function broadcastNotes(msg) {
+  try { NOTES_CHANNEL?.postMessage({ ...msg, ts: Date.now() }); } catch (e) {}
+}
+
+// --- Hook marked once: hashtags, wiki-links, hljs code ---
+let __markedConfigured = false;
+function configureMarked() {
+  if (__markedConfigured || typeof marked === 'undefined') return;
+  __markedConfigured = true;
+  const escapeHtml = (s) => String(s).replace(/[&<>"]/g, c => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;',
+  }[c]));
+  marked.use({
+    gfm: true,
+    breaks: true,
+    extensions: [
+      {
+        name: 'wikilink',
+        level: 'inline',
+        start(src) { const i = src.indexOf('[['); return i < 0 ? undefined : i; },
+        tokenizer(src) {
+          const m = /^\[\[([^\[\]\n]{1,200})\]\]/.exec(src);
+          if (m) return { type: 'wikilink', raw: m[0], target: m[1].trim() };
+        },
+        renderer(t) {
+          return `<a href="#" class="wikilink" data-wikilink="${escapeHtml(t.target)}">${escapeHtml(t.target)}</a>`;
+        },
+      },
+      {
+        name: 'hashtag',
+        level: 'inline',
+        start(src) {
+          const m = /(?:^|\s)#[A-Za-z0-9]/.exec(src);
+          return m ? m.index + (m[0].length - 2) : undefined;
+        },
+        tokenizer(src) {
+          const m = /^#([A-Za-z0-9][\w-]{0,63})(?![\w-])/.exec(src);
+          if (m) return { type: 'hashtag', raw: m[0], tag: m[1].toLowerCase() };
+        },
+        renderer(t) {
+          return `<a href="#" class="tag-link" data-tag="${escapeHtml(t.tag)}">#${escapeHtml(t.tag)}</a>`;
+        },
+      },
+    ],
+  });
+  marked.use({
+    renderer: {
+      code(codeOrToken, langArg) {
+        // marked v9+ passes a token object, older versions pass (code, lang)
+        const code = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.text : codeOrToken;
+        const lang = typeof codeOrToken === 'object' && codeOrToken !== null ? codeOrToken.lang : langArg;
+        const safeLang = (lang || '').match(/^[a-zA-Z0-9+#.-]+$/) ? lang : '';
+        if (typeof hljs !== 'undefined' && safeLang && hljs.getLanguage && hljs.getLanguage(safeLang)) {
+          try {
+            const out = hljs.highlight(code, { language: safeLang }).value;
+            return `<pre><code class="hljs language-${safeLang}">${out}</code></pre>`;
+          } catch (e) {}
+        }
+        return `<pre><code>${escapeHtml(code)}</code></pre>`;
+      },
+    },
+  });
+}
+configureMarked();
+
+const renderMarkdown = (body) => {
+  if (typeof marked === 'undefined') return body || '';
+  try {
+    return marked.parse(body || '', { breaks: true, gfm: true, mangle: false, headerIds: false });
+  } catch (e) { return body || ''; }
+};
+
+// Word/char count
+const countWords = (s) => (s || '').trim().split(/\s+/).filter(Boolean).length;
+
+// Helpers for textarea editing
+function insertAtCaret(textarea, before, after = '', placeholder = '') {
+  const start = textarea.selectionStart;
+  const end = textarea.selectionEnd;
+  const value = textarea.value;
+  const selected = value.slice(start, end) || placeholder;
+  const next = value.slice(0, start) + before + selected + after + value.slice(end);
+  const cursorStart = start + before.length;
+  const cursorEnd = cursorStart + selected.length;
+  return { next, cursorStart, cursorEnd };
+}
+
+function applyTextareaChange(setBody, textareaRef, before, after = '', placeholder = '') {
+  const ta = textareaRef.current;
+  if (!ta) return;
+  const { next, cursorStart, cursorEnd } = insertAtCaret(ta, before, after, placeholder);
+  setBody(next);
+  setTimeout(() => {
+    ta.focus();
+    ta.setSelectionRange(cursorStart, cursorEnd);
+  }, 0);
+}
+
+function replaceRangeInTextarea(setBody, textareaRef, from, to, replacement, caretAfter) {
+  const ta = textareaRef.current;
+  if (!ta) return;
+  const v = ta.value;
+  const next = v.slice(0, from) + replacement + v.slice(to);
+  setBody(next);
+  setTimeout(() => {
+    ta.focus();
+    const c = caretAfter ?? (from + replacement.length);
+    ta.setSelectionRange(c, c);
+  }, 0);
+}
+
+// Slash menu items
+const SLASH_ITEMS = [
+  { key: 'h1',     label: 'Heading 1',         icon: 'H₁', apply: (a) => a('# ', '', 'Heading') },
+  { key: 'h2',     label: 'Heading 2',         icon: 'H₂', apply: (a) => a('## ', '', 'Heading') },
+  { key: 'h3',     label: 'Heading 3',         icon: 'H₃', apply: (a) => a('### ', '', 'Heading') },
+  { key: 'bold',   label: 'Bold',              icon: 'B',  apply: (a) => a('**', '**', 'bold') },
+  { key: 'italic', label: 'Italic',            icon: 'I',  apply: (a) => a('*', '*', 'italic') },
+  { key: 'code',   label: 'Inline code',       icon: '<>', apply: (a) => a('`', '`', 'code') },
+  { key: 'codeblk',label: 'Code block',        icon: '⌘',  apply: (a) => a('```\n', '\n```\n', 'code') },
+  { key: 'quote',  label: 'Blockquote',        icon: '"',  apply: (a) => a('> ', '', 'quote') },
+  { key: 'ul',     label: 'Bulleted list',     icon: '•',  apply: (a) => a('- ', '', 'item') },
+  { key: 'ol',     label: 'Numbered list',     icon: '1.', apply: (a) => a('1. ', '', 'item') },
+  { key: 'check',  label: 'Checklist item',    icon: '☐',  apply: (a) => a('- [ ] ', '', 'task') },
+  { key: 'link',   label: 'Link',              icon: '→',  apply: (a) => a('[', '](https://)', 'text') },
+  { key: 'wiki',   label: 'Wiki-link [[…]]',   icon: '[[', apply: (a) => a('[[', ']]', 'Note title') },
+  { key: 'tag',    label: 'Tag #…',            icon: '#',  apply: (a) => a('#', '', 'tag') },
+  { key: 'hr',     label: 'Divider',           icon: '—',  apply: (a) => a('\n---\n', '', '') },
+  { key: 'table',  label: 'Table (3×2)',       icon: '⊞',  apply: (a) => a(
+    '\n| Col A | Col B | Col C |\n| --- | --- | --- |\n| ', ' |  |  |\n', 'cell',
+  ) },
+  { key: 'today',  label: "Today's date",      icon: '📅', apply: (a) => a(todayStr(), '', '') },
+];
+
+// ---------- Slash / wiki popover menu ----------
+
+function PopoverMenu({ items, selected, onPick, onHover, anchor, onClose }) {
+  // anchor: { top, left }
+  const ref = useRef(null);
+  useEffect(() => {
+    const click = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose?.();
+    };
+    setTimeout(() => document.addEventListener('mousedown', click), 0);
+    return () => document.removeEventListener('mousedown', click);
+  }, [onClose]);
+  return (
+    <div className="popover-menu" ref={ref} style={{ top: anchor.top, left: anchor.left }}>
+      {items.length === 0 && <div className="popover-empty">No matches</div>}
+      {items.map((it, i) => (
+        <div
+          key={it.key}
+          className={`popover-item ${i === selected ? 'selected' : ''}`}
+          onMouseEnter={() => onHover?.(i)}
+          onClick={() => onPick(i)}
+        >
+          <span className="pi-icon">{it.icon}</span>
+          <span className="pi-label">{it.label}</span>
+          {it.meta && <span className="pi-meta">{it.meta}</span>}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ---------- Notebook color/icon picker ----------
+const NOTEBOOK_COLORS = ['#c1542a', '#5c7a3a', '#b88820', '#6b5b8a', '#3a6e7a', '#a04060', '#7a4f1f', '#2e6e54'];
+
+function NotebookEditModal({ initial, onClose, onSave }) {
+  const [name, setName] = useState(initial?.name || '');
+  const [color, setColor] = useState(initial?.color || NOTEBOOK_COLORS[0]);
+  const submit = async () => {
+    if (!name.trim()) return;
+    await onSave({ name: name.trim(), color });
+    onClose();
+  };
+  return (
+    <div className="palette-overlay" onClick={onClose}>
+      <div className="palette" style={{ width: 380 }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>{initial ? 'Rename notebook' : 'New notebook'}</div>
+          <button className="icon-btn" onClick={onClose}><Icon.X size={14}/></button>
+        </div>
+        <div style={{ padding: 18, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <input
+            autoFocus
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+            placeholder="Notebook name"
+            style={{
+              padding: '8px 10px', background: 'var(--surface-2)',
+              border: '1px solid var(--border)', borderRadius: 6,
+              color: 'var(--ink)', font: 'inherit', fontSize: 14, outline: 'none',
+            }}
+          />
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {NOTEBOOK_COLORS.map(c => (
+              <div
+                key={c}
+                onClick={() => setColor(c)}
+                className={`notebook-color-swatch ${c === color ? 'selected' : ''}`}
+                style={{ background: c }}
+              />
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" onClick={submit}>{initial ? 'Save' : 'Create'}</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ---------- Notes rail (scope + list of notes) ----------
+
+function NotesRail({
+  scope, setScope, notebooks, tags, recentDates,
+  notes, activeNoteId, onSelectNote, search, setSearch,
+  onCreateNotebook, onRenameNotebook, onDeleteNotebook,
+  onReorderNotes, onCreateNote, sortMode, setSortMode,
+}) {
+  const [editingNb, setEditingNb] = useState(null);
+  const [creatingNb, setCreatingNb] = useState(false);
+  const [dragId, setDragId] = useState(null);
+  const [dropTarget, setDropTarget] = useState(null);
+
+  const isActive = (s) => scope.kind === s.kind && scope.id === s.id && scope.value === s.value;
+
+  const onDragStart = (e, id) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; };
+  const onDragOver = (e, id) => {
+    if (!dragId || dragId === id) return;
+    e.preventDefault();
+    const r = e.currentTarget.getBoundingClientRect();
+    const above = (e.clientY - r.top) < r.height / 2;
+    setDropTarget({ id, above });
+  };
+  const onDrop = (e, id) => {
+    e.preventDefault();
+    if (!dragId || dragId === id || !dropTarget) return;
+    const ids = notes.map(n => n.id);
+    const fromIdx = ids.indexOf(dragId);
+    const toIdx = ids.indexOf(id) + (dropTarget.above ? 0 : 1);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const arr = [...ids];
+    arr.splice(fromIdx, 1);
+    arr.splice(toIdx > fromIdx ? toIdx - 1 : toIdx, 0, dragId);
+    onReorderNotes(arr);
+    setDragId(null); setDropTarget(null);
+  };
+
+  return (
+    <aside className="notes-rail">
+      <div className="rail-scope">
+        <div className="rail-section">
+          <div className="section-label"><span>Quick</span></div>
+          <div className={`rail-item ${isActive({ kind: 'today' }) ? 'active' : ''}`}
+               onClick={() => setScope({ kind: 'today', value: todayStr() })}>
+            <span className="ri-icon"><Icon.Today/></span>
+            <span className="ri-label">Today</span>
+          </div>
+          <div className={`rail-item ${scope.kind === 'all' ? 'active' : ''}`}
+               onClick={() => setScope({ kind: 'all' })}>
+            <span className="ri-icon"><Icon.Inbox/></span>
+            <span className="ri-label">All notes</span>
+          </div>
+          <div className={`rail-item ${scope.kind === 'pinned' ? 'active' : ''}`}
+               onClick={() => setScope({ kind: 'pinned' })}>
+            <span className="ri-icon" style={{ color: 'var(--warning)' }}><Icon.Star/></span>
+            <span className="ri-label">Pinned</span>
+          </div>
+        </div>
+
+        <div className="rail-section">
+          <div className="section-label">
+            <span>Notebooks</span>
+            <button className="add-mini" title="New notebook" onClick={() => setCreatingNb(true)}>+</button>
+          </div>
+          {notebooks.length === 0 && (
+            <div style={{ color: 'var(--ink-4)', fontSize: 11, padding: '4px 10px' }}>No notebooks yet</div>
+          )}
+          {notebooks.map(nb => (
+            <div key={nb.id}
+                 className={`rail-item ${scope.kind === 'notebook' && scope.id === nb.id ? 'active' : ''}`}
+                 onClick={() => setScope({ kind: 'notebook', id: nb.id, name: nb.name })}>
+              <span className="ri-color" style={{ background: nb.color }}/>
+              <span className="ri-label">{nb.name}</span>
+              <span className="ri-count">{nb.count ?? 0}</span>
+              <span className="ri-actions">
+                <button className="icon-btn" title="Rename"
+                        onClick={(e) => { e.stopPropagation(); setEditingNb(nb); }}>
+                  <Icon.Edit size={11}/>
+                </button>
+                <button className="icon-btn" title="Delete"
+                        onClick={(e) => { e.stopPropagation();
+                          if (confirm(`Delete "${nb.name}"? Notes will be moved out of the notebook (not deleted).`)) onDeleteNotebook(nb.id);
+                        }}>
+                  <Icon.Trash size={11}/>
+                </button>
+              </span>
+            </div>
+          ))}
+        </div>
+
+        {tags.length > 0 && (
+          <div className="rail-section">
+            <div className="section-label"><span>Tags</span></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '0 8px 6px' }}>
+              {tags.slice(0, 24).map(t => (
+                <span key={t.tag}
+                      className={`tag-chip ${scope.kind === 'tag' && scope.value === t.tag ? 'active' : ''}`}
+                      onClick={() => setScope({ kind: 'tag', value: t.tag })}>
+                  #{t.tag} <span style={{ opacity: 0.6 }}>{t.count}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {recentDates.length > 0 && (
+          <div className="rail-section">
+            <div className="section-label"><span>Recent days</span></div>
+            {recentDates.slice(0, 12).map(d => (
+              <div key={d.date}
+                   className={`rail-item ${scope.kind === 'date' && scope.value === d.date ? 'active' : ''}`}
+                   onClick={() => setScope({ kind: 'date', value: d.date })}>
+                <span className="ri-icon"><Icon.Calendar/></span>
+                <span className="ri-label" style={{ fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5 }}>
+                  {d.date}
+                </span>
+                <span className="ri-count">{d.count}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="rail-list-header">
+        <input
+          className="rail-search"
+          placeholder="Search this scope…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <button className="icon-btn" title="New note in this scope" onClick={onCreateNote}>
+          <Icon.Plus size={13}/>
+        </button>
+      </div>
+
+      <div className="rail-list">
+        {notes.length === 0 ? (
+          <div style={{ padding: 14, color: 'var(--ink-4)', fontSize: 12, textAlign: 'center' }}>
+            No notes here yet.
+          </div>
+        ) : notes.map(n => {
+          const dropClass = dropTarget?.id === n.id
+            ? (dropTarget.above ? 'drop-above' : 'drop-below') : '';
+          const dragClass = dragId === n.id ? 'dragging' : '';
+          const untitled = !n.title;
+          return (
+            <div
+              key={n.id}
+              className={`note-row ${activeNoteId === n.id ? 'active' : ''} ${untitled ? 'untitled' : ''} ${dropClass} ${dragClass}`}
+              draggable={sortMode === 'manual'}
+              onDragStart={(e) => onDragStart(e, n.id)}
+              onDragOver={(e) => onDragOver(e, n.id)}
+              onDrop={(e) => onDrop(e, n.id)}
+              onDragEnd={() => { setDragId(null); setDropTarget(null); }}
+              onClick={() => onSelectNote(n.id)}
+            >
+              <div className="nr-top">
+                {n.pinned && <span className="nr-pin"><Icon.Star/></span>}
+                <span className="nr-title">{n.title || 'Untitled'}</span>
+              </div>
+              <div className="nr-meta">
+                <span>{n.date}</span>
+                {n.notebook_id && <span>· in nb</span>}
+                <span style={{ marginLeft: 'auto' }}>{countWords(n.body)}w</span>
+              </div>
+              {n.body && (
+                <div className="nr-snippet">{n.body.replace(/[\n\r]+/g, ' ').slice(0, 80)}</div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {creatingNb && (
+        <NotebookEditModal
+          onClose={() => setCreatingNb(false)}
+          onSave={async (vals) => { await onCreateNotebook(vals); }}
+        />
+      )}
+      {editingNb && (
+        <NotebookEditModal
+          initial={editingNb}
+          onClose={() => setEditingNb(null)}
+          onSave={async (vals) => { await onRenameNotebook(editingNb.id, vals); }}
+        />
+      )}
+    </aside>
+  );
+}
+
+// ---------- Editor ----------
+
+function NoteEditor({
+  note, allTitles, prefs, setPrefs,
+  onChange, onDelete, onTogglePin, onMoveToNotebook, notebooks,
+  onOpenWikiLink, onJumpToTag, onDuplicate,
+  twoUp, onToggleTwoUp,
+}) {
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
-  const [mode, setMode] = useState('edit'); // 'edit' | 'preview'
+  const [savedState, setSavedState] = useState('saved'); // 'saved' | 'saving' | 'error'
+  const [popover, setPopover] = useState(null); // { kind: 'slash' | 'wiki', items, selected, anchor, replaceFrom, replaceTo }
+  const [backlinks, setBacklinks] = useState([]);
+  const [showBacklinks, setShowBacklinks] = useState(true);
+  const [dropZone, setDropZone] = useState(false);
+  const textareaRef = useRef(null);
+  const previewRef = useRef(null);
   const saveTimer = useRef(null);
   const lastSaved = useRef({ title: note.title, body: note.body });
 
+  // Sync incoming note changes (e.g., from BroadcastChannel)
+  useEffect(() => {
+    setTitle(note.title);
+    setBody(note.body);
+    lastSaved.current = { title: note.title, body: note.body };
+  }, [note.id]);
+
+  // Debounced save
   useEffect(() => {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     if (title === lastSaved.current.title && body === lastSaved.current.body) return;
+    setSavedState('saving');
     saveTimer.current = setTimeout(async () => {
       const patch = {};
       if (title !== lastSaved.current.title) patch.title = title;
@@ -1568,108 +2365,523 @@ function NoteCard({ note, onChange, onDelete }) {
         });
         if (r.ok) {
           lastSaved.current = { title, body };
-          onChange?.(await r.json());
+          setSavedState('saved');
+          const updated = await r.json();
+          onChange?.(updated);
+          broadcastNotes({ type: 'note-changed', id: note.id });
+        } else {
+          setSavedState('error');
         }
-      } catch (e) {}
-    }, 400);
+      } catch (e) { setSavedState('error'); }
+    }, 350);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, [title, body]);
+  }, [title, body, note.id]);
+
+  // Backlinks
+  useEffect(() => {
+    if (!note.id || !note.title) { setBacklinks([]); return; }
+    const t = setTimeout(async () => {
+      try {
+        const r = await fetch(`/api/notes/${note.id}/backlinks`, { cache: 'no-store' });
+        if (r.ok) setBacklinks(await r.json());
+      } catch (e) {}
+    }, 250);
+    return () => clearTimeout(t);
+  }, [note.id, note.title, lastSaved.current.body]);
 
   const rendered = useMemo(() => {
-    if (typeof marked === 'undefined') return body;
-    try { return marked.parse(body || '*(empty)*', { breaks: true, gfm: true, mangle: false, headerIds: false }); }
-    catch (e) { return body; }
-  }, [body, mode]);
+    const html = renderMarkdown(body || '_(empty)_');
+    return html;
+  }, [body]);
+
+  // Mark broken wikilinks (those without a target). allTitles is lowered.
+  const renderedHtml = useMemo(() => {
+    const titleSet = new Set(allTitles.map(t => t.title.toLowerCase()));
+    return rendered.replace(/<a href="#" class="wikilink" data-wikilink="([^"]+)">([^<]+)<\/a>/g,
+      (m, target, text) => {
+        const exists = titleSet.has(target.toLowerCase());
+        const cls = exists ? 'wikilink' : 'wikilink broken';
+        return `<a href="#" class="${cls}" data-wikilink="${target}">${text}</a>`;
+      });
+  }, [rendered, allTitles]);
+
+  // Handle clicks in the preview pane (wikilinks, hashtags, checkboxes)
+  useEffect(() => {
+    const el = previewRef.current;
+    if (!el) return;
+    const onClick = (e) => {
+      const wiki = e.target.closest?.('a.wikilink');
+      if (wiki) { e.preventDefault(); onOpenWikiLink?.(wiki.dataset.wikilink); return; }
+      const tag = e.target.closest?.('a.tag-link');
+      if (tag) { e.preventDefault(); onJumpToTag?.(tag.dataset.tag); return; }
+      if (e.target.matches?.('input[type="checkbox"]')) {
+        e.preventDefault();
+        // Toggle Nth checkbox in source
+        const inputs = Array.from(el.querySelectorAll('input[type="checkbox"]'));
+        const idx = inputs.indexOf(e.target);
+        if (idx < 0) return;
+        let count = 0;
+        const next = body.replace(/^([ \t]*[-*+] \[)([ xX])(\])/gm, (_, pre, mark, post) => {
+          if (count++ !== idx) return _;
+          const newMark = (mark.toLowerCase() === 'x') ? ' ' : 'x';
+          return `${pre}${newMark}${post}`;
+        });
+        if (next !== body) setBody(next);
+      }
+    };
+    el.addEventListener('click', onClick);
+    return () => el.removeEventListener('click', onClick);
+  }, [body, onOpenWikiLink, onJumpToTag]);
+
+  // Re-highlight code on render
+  useEffect(() => {
+    if (typeof hljs === 'undefined') return;
+    previewRef.current?.querySelectorAll('pre code:not(.hljs-done)').forEach(el => {
+      try { hljs.highlightElement(el); el.classList.add('hljs-done'); } catch (e) {}
+    });
+  }, [renderedHtml]);
+
+  // Slash menu / wiki autocomplete trigger
+  const triggerPopover = (kind, replaceFrom, replaceTo, query = '') => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const rect = ta.getBoundingClientRect();
+    // Approximate caret position via a hidden mirror div
+    const caretXY = getCaretCoordinates(ta, ta.selectionStart);
+    // popover is position: fixed — use viewport-relative coords (no scroll offsets)
+    const top = rect.top + caretXY.top - ta.scrollTop + 22;
+    const left = rect.left + caretXY.left - ta.scrollLeft;
+    let items = [];
+    if (kind === 'slash') {
+      const ql = query.toLowerCase();
+      items = SLASH_ITEMS
+        .filter(it => !ql || it.label.toLowerCase().includes(ql))
+        .map((it, i) => ({ ...it, idx: i }));
+    } else if (kind === 'wiki') {
+      const ql = query.toLowerCase();
+      items = allTitles
+        .filter(t => !ql || t.title.toLowerCase().includes(ql))
+        .slice(0, 12)
+        .map(t => ({ key: 'w-' + t.id, label: t.title, meta: t.date, target: t.title, icon: '[[' }));
+      if (query && !items.some(it => it.target.toLowerCase() === query.toLowerCase())) {
+        items.push({ key: 'new', label: `Create "${query}"`, meta: 'new note', target: query, icon: '+', isNew: true });
+      }
+    }
+    setPopover({ kind, items, selected: 0, anchor: { top, left }, replaceFrom, replaceTo, query });
+  };
+
+  // Detect typing of '/' at line start, '[[ … ]]' opening
+  const onKeyUp = (e) => {
+    if (e.key === 'Escape') { setPopover(null); return; }
+    const ta = textareaRef.current;
+    if (!ta) return;
+    const pos = ta.selectionStart;
+    const v = ta.value;
+    // Wiki: detect [[ before caret without closing ]]
+    const wikiMatch = /\[\[([^\[\]\n]{0,80})$/.exec(v.slice(0, pos));
+    if (wikiMatch && !v.slice(0, pos).endsWith(']]')) {
+      triggerPopover('wiki', pos - wikiMatch[0].length, pos, wikiMatch[1]);
+      return;
+    }
+    // Slash: detect '/' at start of line
+    const lineStart = v.lastIndexOf('\n', pos - 1) + 1;
+    const lineSoFar = v.slice(lineStart, pos);
+    const slashMatch = /^\/(\w*)$/.exec(lineSoFar);
+    if (slashMatch) {
+      triggerPopover('slash', lineStart, pos, slashMatch[1]);
+      return;
+    }
+    setPopover(null);
+  };
+
+  const onKeyDown = (e) => {
+    if (popover) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setPopover(p => p ? { ...p, selected: Math.min(p.items.length - 1, p.selected + 1) } : p);
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setPopover(p => p ? { ...p, selected: Math.max(0, p.selected - 1) } : p);
+      } else if (e.key === 'Enter' || e.key === 'Tab') {
+        if (popover.items.length > 0) {
+          e.preventDefault();
+          pickPopoverItem(popover.selected);
+        }
+      } else if (e.key === 'Escape') {
+        e.preventDefault(); setPopover(null);
+      }
+      return;
+    }
+    // Common shortcuts inside textarea
+    if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === 'b') { e.preventDefault(); applyTextareaChange(setBody, textareaRef, '**', '**', 'bold'); }
+      else if (k === 'i') { e.preventDefault(); applyTextareaChange(setBody, textareaRef, '*', '*', 'italic'); }
+      else if (k === 'k') { e.preventDefault(); applyTextareaChange(setBody, textareaRef, '[', '](https://)', 'text'); }
+      else if (k === '`' || k === 'e') { e.preventDefault(); applyTextareaChange(setBody, textareaRef, '`', '`', 'code'); }
+    }
+  };
+
+  const pickPopoverItem = (idx) => {
+    if (!popover) return;
+    const item = popover.items[idx];
+    if (!item) return;
+    if (popover.kind === 'slash') {
+      // Replace "/query" with markdown via apply()
+      replaceRangeInTextarea(setBody, textareaRef, popover.replaceFrom, popover.replaceTo, '');
+      setTimeout(() => {
+        item.apply((before, after, placeholder) =>
+          applyTextareaChange(setBody, textareaRef, before, after, placeholder));
+      }, 5);
+    } else if (popover.kind === 'wiki') {
+      const replacement = `[[${item.target}]]`;
+      // Replace from the start of [[ to current pos, keep caret after ]]
+      const ta = textareaRef.current;
+      const before = ta.value.slice(0, popover.replaceFrom);
+      const after = ta.value.slice(popover.replaceTo);
+      // Strip any trailing ']]' user already typed
+      const cleanedAfter = after.startsWith(']]') ? after.slice(2) : after;
+      const next = before + replacement + cleanedAfter;
+      const caret = before.length + replacement.length;
+      setBody(next);
+      setTimeout(() => { ta.focus(); ta.setSelectionRange(caret, caret); }, 0);
+    }
+    setPopover(null);
+  };
+
+  // Image upload (paste / drop)
+  const uploadImage = async (file) => {
+    if (!file || !file.type.startsWith('image/')) return null;
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const r = await fetch(`/api/notes/${note.id}/images`, { method: 'POST', body: fd });
+      const j = await r.json();
+      if (r.ok) return j;
+    } catch (e) {}
+    return null;
+  };
+
+  const onPaste = async (e) => {
+    const items = e.clipboardData?.items || [];
+    for (const it of items) {
+      if (it.kind === 'file' && it.type.startsWith('image/')) {
+        e.preventDefault();
+        const file = it.getAsFile();
+        const r = await uploadImage(file);
+        if (r) {
+          applyTextareaChange(setBody, textareaRef,
+            `![${file.name || 'image'}](${r.url})`, '', '');
+        }
+        return;
+      }
+    }
+  };
+
+  const onDrop = async (e) => {
+    e.preventDefault(); setDropZone(false);
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    const r = await uploadImage(file);
+    if (r) {
+      applyTextareaChange(setBody, textareaRef,
+        `![${file.name || 'image'}](${r.url})`, '', '');
+    }
+  };
+
+  const fontClass = prefs.font === 'sans' ? 'font-sans' : prefs.font === 'serif' ? 'font-serif' : '';
+
+  const wc = countWords(body);
+  const cc = (body || '').length;
+
+  const paneClass = twoUp ? 'split-2up' :
+                    prefs.layout === 'edit' ? 'split-edit' :
+                    prefs.layout === 'preview' ? 'split-preview' : 'split-both';
 
   return (
-    <div style={{
-      background: 'var(--surface)',
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      marginBottom: 14,
-      overflow: 'hidden',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', borderBottom: '1px solid var(--border)' }}>
+    <div className="editor-shell">
+      {/* toolbar */}
+      <div className="editor-toolbar">
         <input
+          className="title-input"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="Untitled note"
-          style={{
-            flex: 1, background: 'transparent', border: 'none', outline: 'none',
-            font: 'inherit', fontSize: 15, fontWeight: 600, color: 'var(--ink)',
-          }}
         />
-        <button
-          className="add-subtask"
-          onClick={() => setMode(mode === 'edit' ? 'preview' : 'edit')}
-          style={{ padding: '4px 10px', fontSize: 11 }}
-        >
-          {mode === 'edit' ? 'Preview' : 'Edit'}
+        <button title="Pin / unpin" className={note.pinned ? 'active' : ''} onClick={onTogglePin}>
+          <Icon.Star/>
         </button>
-        <button className="icon-btn" title="Delete note" onClick={onDelete}><Icon.Trash size={13}/></button>
+        <span className="sep"/>
+        <button title="Edit only" className={prefs.layout === 'edit' && !twoUp ? 'active' : ''}
+                onClick={() => setPrefs(p => ({ ...p, layout: 'edit' }))}>Edit</button>
+        <button title="Split" className={prefs.layout === 'split' && !twoUp ? 'active' : ''}
+                onClick={() => setPrefs(p => ({ ...p, layout: 'split' }))}>Split</button>
+        <button title="Preview only" className={prefs.layout === 'preview' && !twoUp ? 'active' : ''}
+                onClick={() => setPrefs(p => ({ ...p, layout: 'preview' }))}>Preview</button>
+        <button title="Open a second note side by side" className={twoUp ? 'active' : ''}
+                onClick={onToggleTwoUp}>2-up</button>
+        <span className="sep"/>
+        <button title="Bold (⌘B)" onClick={() => applyTextareaChange(setBody, textareaRef, '**', '**', 'bold')}><b>B</b></button>
+        <button title="Italic (⌘I)" onClick={() => applyTextareaChange(setBody, textareaRef, '*', '*', 'italic')}><i>I</i></button>
+        <button title="Inline code" onClick={() => applyTextareaChange(setBody, textareaRef, '`', '`', 'code')}>{'<>'}</button>
+        <button title="Bulleted list" onClick={() => applyTextareaChange(setBody, textareaRef, '- ', '', 'item')}>•</button>
+        <button title="Checklist item" onClick={() => applyTextareaChange(setBody, textareaRef, '- [ ] ', '', 'task')}>☐</button>
+        <button title="Heading" onClick={() => applyTextareaChange(setBody, textareaRef, '## ', '', 'Heading')}>H</button>
+        <button title="Insert table" onClick={() => applyTextareaChange(setBody, textareaRef,
+          '\n| Col A | Col B | Col C |\n| --- | --- | --- |\n| ', ' |  |  |\n', 'cell')}>⊞</button>
+        <span className="sep"/>
+        <select
+          title="Font" value={prefs.font}
+          onChange={(e) => setPrefs(p => ({ ...p, font: e.target.value }))}
+          className="field-select"
+          style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 5,
+                   padding: '4px 16px 4px 8px', color: 'var(--ink-3)', fontSize: 11.5, cursor: 'pointer' }}
+        >
+          <option value="mono">Mono</option>
+          <option value="sans">Sans</option>
+          <option value="serif">Serif</option>
+        </select>
+        {notebooks.length > 0 && (
+          <select
+            title="Move to notebook"
+            value={note.notebook_id || ''}
+            onChange={(e) => onMoveToNotebook(e.target.value || null)}
+            className="field-select"
+            style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 5,
+                     padding: '4px 16px 4px 8px', color: 'var(--ink-3)', fontSize: 11.5, cursor: 'pointer' }}
+          >
+            <option value="">— Daily / no notebook —</option>
+            {notebooks.map(nb => <option key={nb.id} value={nb.id}>{nb.name}</option>)}
+          </select>
+        )}
+        <span className="toolbar-spacer"/>
+        <button title="Duplicate note" onClick={onDuplicate}>Duplicate</button>
+        <button title="Print / Save as PDF" onClick={() => window.print()}>PDF</button>
+        <button title="Delete note" onClick={onDelete}><Icon.Trash size={12}/></button>
       </div>
-      {mode === 'edit' ? (
-        <textarea
-          value={body}
-          onChange={(e) => setBody(e.target.value)}
-          placeholder="Markdown supported — # headings, **bold**, lists, links, `code`…"
-          spellCheck={false}
-          style={{
-            width: '100%', minHeight: 120, padding: '12px 14px',
-            background: 'transparent', border: 'none', outline: 'none', resize: 'vertical',
-            font: '13px "IBM Plex Mono", monospace', color: 'var(--ink)', lineHeight: 1.55,
-          }}
-        />
-      ) : (
+
+      {/* edit + preview */}
+      <div className={`editor-pane ${paneClass}`}>
         <div
-          className="markdown-body"
-          style={{ padding: '12px 16px', fontSize: 14, color: 'var(--ink)', lineHeight: 1.55 }}
-          dangerouslySetInnerHTML={{ __html: rendered }}
-        />
+          className={`editor-textarea-wrap ${dropZone ? 'dropzone-active' : ''}`}
+          onDragOver={(e) => { e.preventDefault(); setDropZone(true); }}
+          onDragLeave={() => setDropZone(false)}
+          onDrop={onDrop}
+        >
+          <textarea
+            ref={textareaRef}
+            className={`editor-textarea ${fontClass}`}
+            spellCheck={false}
+            value={body}
+            onChange={(e) => setBody(e.target.value)}
+            onKeyDown={onKeyDown}
+            onKeyUp={onKeyUp}
+            onPaste={onPaste}
+            placeholder={"Type away. '/' for slash menu, '[[' for wiki-links, '#tag' to tag, drop or paste images directly…"}
+            style={{ fontSize: prefs.fontSize || 13 }}
+          />
+        </div>
+        <div className="editor-preview-wrap">
+          <div
+            ref={previewRef}
+            className="markdown-body editor-preview"
+            dangerouslySetInnerHTML={{ __html: renderedHtml }}
+          />
+        </div>
+      </div>
+
+      {/* status bar */}
+      <div className="note-statusbar">
+        <span className={savedState}>
+          {savedState === 'saved' && '● saved'}
+          {savedState === 'saving' && '● saving…'}
+          {savedState === 'error' && '● save failed (retrying)'}
+        </span>
+        <span>{wc} words · {cc} chars</span>
+        <span>{note.date}</span>
+        <span className="status-spacer"/>
+        <span>id: {note.id.slice(0, 6)}</span>
+      </div>
+
+      {/* backlinks */}
+      {showBacklinks && (
+        <div className="backlinks-panel">
+          <div className="bp-title">
+            <span>Backlinks ({backlinks.length})</span>
+            <button className="icon-btn" style={{ marginLeft: 'auto' }} title="Hide"
+                    onClick={() => setShowBacklinks(false)}><Icon.X size={11}/></button>
+          </div>
+          {backlinks.length === 0 ? (
+            <div className="bp-empty">No notes link to <strong>{note.title || '(untitled)'}</strong> yet. Reference it as <code>[[{note.title || 'Title'}]]</code> from another note.</div>
+          ) : backlinks.map(b => (
+            <div key={b.id} className="bp-row" onClick={() => onOpenWikiLink?.(b.title)}>
+              <span>{b.title || '(untitled)'}</span>
+              <span className="bp-meta">{b.date}</span>
+            </div>
+          ))}
+        </div>
       )}
+
+      {popover && <PopoverMenu
+        items={popover.items}
+        selected={popover.selected}
+        anchor={popover.anchor}
+        onHover={(i) => setPopover(p => p ? { ...p, selected: i } : p)}
+        onPick={pickPopoverItem}
+        onClose={() => setPopover(null)}
+      />}
     </div>
   );
 }
 
+// Caret positioning helper for popover anchoring
+function getCaretCoordinates(textarea, position) {
+  // Lightweight mirror-div approach
+  const div = document.createElement('div');
+  const style = window.getComputedStyle(textarea);
+  for (const prop of [
+    'boxSizing','width','height','overflowX','overflowY','borderTopWidth','borderRightWidth',
+    'borderBottomWidth','borderLeftWidth','paddingTop','paddingRight','paddingBottom','paddingLeft',
+    'fontStyle','fontVariant','fontWeight','fontStretch','fontSize','lineHeight','fontFamily',
+    'textAlign','textTransform','textIndent','letterSpacing','wordSpacing','tabSize',
+  ]) { div.style[prop] = style[prop]; }
+  div.style.whiteSpace = 'pre-wrap';
+  div.style.wordWrap = 'break-word';
+  div.style.position = 'absolute';
+  div.style.visibility = 'hidden';
+  div.style.top = '0';
+  div.style.left = '0';
+  document.body.appendChild(div);
+  div.textContent = textarea.value.substring(0, position);
+  const span = document.createElement('span');
+  span.textContent = textarea.value.substring(position) || '.';
+  div.appendChild(span);
+  const rect = { top: span.offsetTop - textarea.scrollTop, left: span.offsetLeft - textarea.scrollLeft };
+  document.body.removeChild(div);
+  return rect;
+}
+
+// ---------- Notes view (top-level) ----------
+
 function NotesView({ initialDate }) {
-  const [date, setDate] = useState(initialDate || todayStr());
+  const [scope, setScope] = useState(
+    initialDate ? { kind: 'date', value: initialDate } : { kind: 'today', value: todayStr() }
+  );
+  const [search, setSearch] = useState('');
   const [notes, setNotes] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [allTitles, setAllTitles] = useState([]);
+  const [notebooks, setNotebooks] = useState([]);
+  const [tags, setTags] = useState([]);
+  const [recentDates, setRecentDates] = useState([]);
+  const [activeId, setActiveId] = useState(null);
+  const [activeId2, setActiveId2] = useState(null);
+  const [twoUp, setTwoUp] = useState(false);
+  const [openTabs, setOpenTabs] = useState([]); // [{id, title}]
+  const [prefs, _setPrefs] = useState(loadNotesPrefs);
+  const setPrefs = useCallback((updater) => {
+    _setPrefs(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveNotesPrefs(next); return next;
+    });
+  }, []);
 
-  useEffect(() => { if (initialDate) setDate(initialDate); }, [initialDate]);
+  useEffect(() => {
+    if (initialDate) setScope({ kind: 'date', value: initialDate });
+  }, [initialDate]);
 
-  const load = useCallback(async (d) => {
-    setLoading(true);
+  // ---- loaders ----
+  const buildScopeQuery = useCallback((s) => {
+    const params = new URLSearchParams();
+    if (s.kind === 'today') { params.set('date', todayStr()); }
+    else if (s.kind === 'date') { params.set('date', s.value); }
+    else if (s.kind === 'all') { params.set('all', '1'); }
+    else if (s.kind === 'pinned') { params.set('pinned', '1'); }
+    else if (s.kind === 'notebook') { params.set('notebook_id', s.id); }
+    else if (s.kind === 'tag') { params.set('tag', s.value); }
+    return params.toString();
+  }, []);
+
+  const loadNotes = useCallback(async () => {
+    const q = buildScopeQuery(scope);
     try {
-      const r = await fetch(`/api/notes?date=${d}`, { cache: 'no-store' });
+      const r = await fetch(`/api/notes?${q}`, { cache: 'no-store' });
       if (r.status === 401) { location.replace('/login.html'); return; }
       if (r.ok) setNotes(await r.json());
     } catch (e) {}
-    setLoading(false);
+  }, [scope, buildScopeQuery]);
+
+  const loadNotebooks = useCallback(async () => {
+    try { const r = await fetch('/api/notebooks', { cache: 'no-store' }); if (r.ok) setNotebooks(await r.json()); } catch (e) {}
+  }, []);
+  const loadTags = useCallback(async () => {
+    try { const r = await fetch('/api/notes/tags', { cache: 'no-store' }); if (r.ok) setTags(await r.json()); } catch (e) {}
+  }, []);
+  const loadDates = useCallback(async () => {
+    try { const r = await fetch('/api/notes/dates', { cache: 'no-store' }); if (r.ok) setRecentDates(await r.json()); } catch (e) {}
+  }, []);
+  const loadTitles = useCallback(async () => {
+    try { const r = await fetch('/api/notes/titles', { cache: 'no-store' }); if (r.ok) setAllTitles(await r.json()); } catch (e) {}
   }, []);
 
-  useEffect(() => { load(date); }, [date, load]);
+  useEffect(() => { loadNotes(); }, [loadNotes]);
+  useEffect(() => { loadNotebooks(); loadTags(); loadDates(); loadTitles(); }, [loadNotebooks, loadTags, loadDates, loadTitles]);
 
-  const shiftDay = (delta) => {
-    const d = new Date(date + 'T00:00:00');
-    d.setDate(d.getDate() + delta);
-    setDate(d.toISOString().slice(0, 10));
+  // BroadcastChannel: refresh on changes from other tabs
+  useEffect(() => {
+    if (!NOTES_CHANNEL) return;
+    const onMsg = (e) => {
+      const msg = e.data || {};
+      if (msg.type === 'note-changed' || msg.type === 'list-changed') {
+        loadNotes(); loadTitles(); loadTags(); loadDates();
+      }
+      if (msg.type === 'notebooks-changed') loadNotebooks();
+    };
+    NOTES_CHANNEL.addEventListener('message', onMsg);
+    return () => NOTES_CHANNEL.removeEventListener('message', onMsg);
+  }, [loadNotes, loadTitles, loadTags, loadDates, loadNotebooks]);
+
+  // Active note auto-pick
+  useEffect(() => {
+    if (!notes.length) { setActiveId(null); return; }
+    if (!notes.find(n => n.id === activeId)) setActiveId(notes[0].id);
+  }, [notes, activeId]);
+
+  // Apply local search
+  const filteredNotes = useMemo(() => {
+    if (!search.trim()) return notes;
+    const q = search.toLowerCase();
+    return notes.filter(n =>
+      (n.title || '').toLowerCase().includes(q) ||
+      (n.body || '').toLowerCase().includes(q));
+  }, [notes, search]);
+
+  const activeNote = useMemo(() => notes.find(n => n.id === activeId) || null, [notes, activeId]);
+  const activeNote2 = useMemo(() => notes.find(n => n.id === activeId2) || null, [notes, activeId2]);
+
+  // Update local note state after edits (without full reload)
+  const applyNoteUpdate = (updated) => {
+    setNotes(prev => prev.map(n => n.id === updated.id ? { ...n, ...updated } : n));
   };
 
-  const addNote = async () => {
+  // ---- actions ----
+  const createNote = async () => {
+    const body = {};
+    if (scope.kind === 'notebook') body.notebook_id = scope.id;
+    else if (scope.kind === 'date') body.date = scope.value;
+    else if (scope.kind === 'today') body.date = todayStr();
+    else if (scope.kind === 'pinned') { body.pinned = true; body.date = todayStr(); }
+    // 'all' / 'tag' default to today, no notebook
     try {
       const r = await fetch('/api/notes', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ date, title: '', body: '' }),
+        body: JSON.stringify(body),
       });
       if (r.ok) {
         const created = await r.json();
-        setNotes(prev => [...prev, created]);
-        setTimeout(() => {
-          const cards = document.querySelectorAll('.notes-list input');
-          cards[cards.length - 1]?.focus();
-        }, 50);
+        await loadNotes(); await loadTitles(); await loadDates();
+        setActiveId(created.id);
+        broadcastNotes({ type: 'list-changed' });
       }
     } catch (e) {}
   };
@@ -1678,83 +2890,350 @@ function NotesView({ initialDate }) {
     if (!confirm('Delete this note?')) return;
     try {
       const r = await fetch(`/api/notes/${id}`, { method: 'DELETE' });
-      if (r.ok) setNotes(prev => prev.filter(n => n.id !== id));
+      if (r.ok) {
+        await loadNotes(); await loadTitles(); await loadTags(); await loadDates();
+        setOpenTabs(t => t.filter(x => x.id !== id));
+        if (activeId === id) setActiveId(null);
+        if (activeId2 === id) setActiveId2(null);
+        broadcastNotes({ type: 'list-changed' });
+      }
     } catch (e) {}
   };
 
-  const updateNote = (n) => setNotes(prev => prev.map(x => x.id === n.id ? n : x));
+  const togglePin = async (n) => {
+    try {
+      const r = await fetch(`/api/notes/${n.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pinned: !n.pinned }),
+      });
+      if (r.ok) { applyNoteUpdate(await r.json()); broadcastNotes({ type: 'note-changed', id: n.id }); }
+    } catch (e) {}
+  };
 
-  const todayLabel = (() => {
-    const t = todayStr();
-    if (date === t) return 'Today';
-    const y = new Date(t + 'T00:00:00'); y.setDate(y.getDate() - 1);
-    if (date === y.toISOString().slice(0, 10)) return 'Yesterday';
-    return new Date(date + 'T00:00:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-  })();
+  const moveNoteToNotebook = async (id, notebookId) => {
+    try {
+      const r = await fetch(`/api/notes/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notebook_id: notebookId || '' }),
+      });
+      if (r.ok) {
+        applyNoteUpdate(await r.json());
+        await loadNotebooks();
+        broadcastNotes({ type: 'note-changed', id });
+      }
+    } catch (e) {}
+  };
+
+  const duplicateNote = async (id) => {
+    try {
+      const r = await fetch(`/api/notes/${id}/duplicate`, { method: 'POST' });
+      if (r.ok) {
+        const dup = await r.json();
+        await loadNotes(); await loadTitles();
+        setActiveId(dup.id);
+        broadcastNotes({ type: 'list-changed' });
+      }
+    } catch (e) {}
+  };
+
+  const reorderNotes = async (ids) => {
+    // Optimistic
+    setNotes(prev => {
+      const map = new Map(prev.map(n => [n.id, n]));
+      return ids.map(id => map.get(id)).filter(Boolean);
+    });
+    try {
+      await fetch('/api/notes/reorder', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids }),
+      });
+      broadcastNotes({ type: 'list-changed' });
+    } catch (e) {}
+  };
+
+  const createNotebook = async (vals) => {
+    try {
+      const r = await fetch('/api/notebooks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vals),
+      });
+      if (r.ok) {
+        const nb = await r.json();
+        await loadNotebooks();
+        setScope({ kind: 'notebook', id: nb.id, name: nb.name });
+        broadcastNotes({ type: 'notebooks-changed' });
+      }
+    } catch (e) {}
+  };
+  const renameNotebook = async (id, vals) => {
+    try {
+      const r = await fetch(`/api/notebooks/${id}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(vals),
+      });
+      if (r.ok) { await loadNotebooks(); broadcastNotes({ type: 'notebooks-changed' }); }
+    } catch (e) {}
+  };
+  const deleteNotebook = async (id) => {
+    try {
+      const r = await fetch(`/api/notebooks/${id}`, { method: 'DELETE' });
+      if (r.ok) {
+        await loadNotebooks(); await loadNotes();
+        if (scope.kind === 'notebook' && scope.id === id) setScope({ kind: 'all' });
+        broadcastNotes({ type: 'notebooks-changed' });
+      }
+    } catch (e) {}
+  };
+
+  // Wiki link click: go to that note (open or create)
+  const openWikiLink = async (target) => {
+    try {
+      const r = await fetch(`/api/notes/by-title?title=${encodeURIComponent(target)}`);
+      if (r.ok) {
+        const note = await r.json();
+        // Make sure note is in current scope; if not, switch
+        if (!notes.find(n => n.id === note.id)) setScope({ kind: 'all' });
+        addTab(note);
+        setActiveId(note.id);
+      } else if (r.status === 404) {
+        // Create on the fly
+        const cr = await fetch('/api/notes', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title: target, body: '' }),
+        });
+        if (cr.ok) {
+          const note = await cr.json();
+          await loadNotes(); await loadTitles();
+          setScope({ kind: 'all' });
+          addTab(note);
+          setActiveId(note.id);
+        }
+      }
+    } catch (e) {}
+  };
+
+  const jumpToTag = (tag) => setScope({ kind: 'tag', value: tag });
+
+  // Tabs management
+  const addTab = (n) => setOpenTabs(prev => prev.find(x => x.id === n.id) ? prev : [...prev, { id: n.id, title: n.title || 'Untitled' }]);
+  const closeTab = (id) => {
+    setOpenTabs(prev => prev.filter(x => x.id !== id));
+    if (activeId === id) setActiveId(null);
+    if (activeId2 === id) setActiveId2(null);
+  };
+
+  // When a note becomes active via row click, ensure it's a tab
+  useEffect(() => {
+    if (activeNote) addTab(activeNote);
+  }, [activeNote?.id]); // eslint-disable-line
+
+  // Update tab title when active note title changes
+  useEffect(() => {
+    if (!activeNote) return;
+    setOpenTabs(prev => prev.map(t => t.id === activeNote.id ? { ...t, title: activeNote.title || 'Untitled' } : t));
+  }, [activeNote?.title]); // eslint-disable-line
+
+  const scopeLabel = useMemo(() => {
+    if (scope.kind === 'today') return 'Today';
+    if (scope.kind === 'date') return scope.value;
+    if (scope.kind === 'all') return 'All notes';
+    if (scope.kind === 'pinned') return 'Pinned';
+    if (scope.kind === 'tag') return `#${scope.value}`;
+    if (scope.kind === 'notebook') {
+      const nb = notebooks.find(x => x.id === scope.id);
+      return nb ? nb.name : 'Notebook';
+    }
+    return 'Notes';
+  }, [scope, notebooks]);
+
+  // 2-up secondary picker: when toggling on, choose any other note
+  useEffect(() => {
+    if (twoUp && !activeId2) {
+      const other = notes.find(n => n.id !== activeId);
+      if (other) setActiveId2(other.id);
+    }
+    if (!twoUp) setActiveId2(null);
+  }, [twoUp]); // eslint-disable-line
 
   return (
     <main className="main">
       <header className="main-header">
         <div className="header-left">
-          <div className="breadcrumb"><Icon.Edit size={11}/> Daily Notes</div>
+          <div className="breadcrumb"><Icon.Edit size={11}/> Notes · {scopeLabel}</div>
           <div className="project-title-input" style={{ pointerEvents: 'none' }}>
-            {todayLabel} <span style={{ color: 'var(--ink-3)', fontWeight: 400, fontSize: 14 }}>· {date}</span>
+            {scopeLabel}
+            {scope.kind === 'date' && (
+              <span style={{ color: 'var(--ink-3)', fontWeight: 400, fontSize: 14 }}> · {(() => {
+                const t = todayStr();
+                if (scope.value === t) return 'today';
+                const y = new Date(t + 'T00:00:00'); y.setDate(y.getDate() - 1);
+                if (scope.value === y.toISOString().slice(0, 10)) return 'yesterday';
+                return new Date(scope.value + 'T00:00:00').toLocaleDateString(undefined,
+                  { weekday: 'short', month: 'short', day: 'numeric' });
+              })()}</span>
+            )}
           </div>
           <div className="project-meta">
             <span className="meta-pill">{notes.length} note{notes.length === 1 ? '' : 's'}</span>
+            {scope.kind === 'date' && (
+              <>
+                <span style={{ color: 'var(--ink-4)' }}>·</span>
+                <a className="meta-pill" href={`/api/notes/export?date=${scope.value}`} style={{ color: 'var(--accent)' }}>
+                  <Icon.Download size={11}/> .md
+                </a>
+              </>
+            )}
+            <span style={{ color: 'var(--ink-4)' }}>·</span>
+            <a className="meta-pill" href="/api/notes/export.zip" style={{ color: 'var(--accent)' }}>
+              <Icon.Download size={11}/> .zip all
+            </a>
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          <button className="add-subtask" onClick={() => shiftDay(-1)}>← Prev</button>
-          <button className="add-subtask" onClick={() => setDate(todayStr())}>Today</button>
-          <button className="add-subtask" onClick={() => shiftDay(1)}>Next →</button>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => e.target.value && setDate(e.target.value)}
-            style={{
-              padding: '5px 8px', background: 'var(--surface-2)', border: '1px solid var(--border)',
-              borderRadius: 6, color: 'var(--ink)', font: 'inherit', fontSize: 12,
-            }}
-          />
-          <a
-            className="add-subtask"
-            href={`/api/notes/export?date=${date}`}
-            title="Download this day as Markdown"
-            style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-          >
-            <Icon.Download size={11}/> .md
-          </a>
+          {scope.kind === 'date' && (
+            <>
+              <button className="add-subtask" onClick={() => {
+                const d = new Date(scope.value + 'T00:00:00'); d.setDate(d.getDate() - 1);
+                setScope({ kind: 'date', value: d.toISOString().slice(0, 10) });
+              }}>← Prev</button>
+              <button className="add-subtask" onClick={() => setScope({ kind: 'today', value: todayStr() })}>Today</button>
+              <button className="add-subtask" onClick={() => {
+                const d = new Date(scope.value + 'T00:00:00'); d.setDate(d.getDate() + 1);
+                setScope({ kind: 'date', value: d.toISOString().slice(0, 10) });
+              }}>Next →</button>
+              <input
+                type="date" value={scope.value}
+                onChange={(e) => e.target.value && setScope({ kind: 'date', value: e.target.value })}
+                style={{ padding: '5px 8px', background: 'var(--surface-2)',
+                         border: '1px solid var(--border)', borderRadius: 6,
+                         color: 'var(--ink)', font: 'inherit', fontSize: 12 }}
+              />
+            </>
+          )}
         </div>
       </header>
-      <div className="main-content notes-list" style={{ padding: 24, overflowY: 'auto' }}>
-        <div style={{ maxWidth: 820, margin: '0 auto' }}>
-          {loading && <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>Loading…</div>}
-          {!loading && notes.length === 0 && (
-            <div style={{ color: 'var(--ink-3)', textAlign: 'center', padding: 40 }}>
-              No notes for {todayLabel.toLowerCase()}. Click "+ New note" to start capturing.
+
+      <div className="notes-shell">
+        <NotesRail
+          scope={scope}
+          setScope={setScope}
+          notebooks={notebooks}
+          tags={tags}
+          recentDates={recentDates}
+          notes={filteredNotes}
+          activeNoteId={activeId}
+          onSelectNote={(id) => setActiveId(id)}
+          search={search}
+          setSearch={setSearch}
+          onCreateNotebook={createNotebook}
+          onRenameNotebook={renameNotebook}
+          onDeleteNotebook={deleteNotebook}
+          onReorderNotes={reorderNotes}
+          onCreateNote={createNote}
+          sortMode={prefs.sortMode}
+          setSortMode={(m) => setPrefs(p => ({ ...p, sortMode: m }))}
+        />
+
+        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, minHeight: 0, flex: 1 }}>
+          {/* Tabs */}
+          {openTabs.length > 0 && (
+            <div className="note-tabs">
+              {openTabs.map(t => (
+                <div
+                  key={t.id}
+                  className={`note-tab ${activeId === t.id ? 'active' : ''}`}
+                  onClick={() => setActiveId(t.id)}
+                >
+                  <span className="nt-title">{t.title || 'Untitled'}</span>
+                  <button className="nt-close" onClick={(e) => { e.stopPropagation(); closeTab(t.id); }}>×</button>
+                </div>
+              ))}
             </div>
           )}
-          {notes.map(n => (
-            <NoteCard
-              key={n.id}
-              note={n}
-              onChange={updateNote}
-              onDelete={() => removeNote(n.id)}
+
+          {/* Active note(s) */}
+          {!activeNote ? (
+            <div style={{ flex: 1, display: 'grid', placeItems: 'center', color: 'var(--ink-3)', padding: 40 }}>
+              <div style={{ textAlign: 'center', maxWidth: 380 }}>
+                <h3 style={{ fontFamily: 'Fraunces, serif', fontWeight: 400, fontSize: 22, color: 'var(--ink-2)', marginBottom: 8 }}>
+                  No note selected
+                </h3>
+                <p style={{ fontSize: 13, marginBottom: 14 }}>
+                  Pick one from the rail, or create a new one.
+                </p>
+                <button className="btn btn-primary" onClick={createNote}>
+                  <Icon.Plus size={12}/> New note in {scopeLabel}
+                </button>
+              </div>
+            </div>
+          ) : twoUp && activeNote2 ? (
+            <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 1fr', minHeight: 0 }}>
+              <NoteEditor
+                note={activeNote}
+                allTitles={allTitles}
+                prefs={prefs} setPrefs={setPrefs}
+                onChange={applyNoteUpdate}
+                onDelete={() => removeNote(activeNote.id)}
+                onTogglePin={() => togglePin(activeNote)}
+                onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
+                onDuplicate={() => duplicateNote(activeNote.id)}
+                onOpenWikiLink={openWikiLink}
+                onJumpToTag={jumpToTag}
+                notebooks={notebooks}
+                twoUp={twoUp}
+                onToggleTwoUp={() => setTwoUp(false)}
+              />
+              <div style={{ borderLeft: '1px solid var(--border)', display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                <div style={{ padding: '6px 12px', borderBottom: '1px solid var(--border)',
+                              fontSize: 11, color: 'var(--ink-3)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span>Right pane:</span>
+                  <select value={activeId2 || ''} onChange={(e) => setActiveId2(e.target.value)}
+                          className="field-select"
+                          style={{ background: 'transparent', border: '1px solid var(--border)', borderRadius: 5,
+                                   padding: '3px 16px 3px 8px', color: 'var(--ink-2)', fontSize: 11, cursor: 'pointer' }}>
+                    {notes.filter(n => n.id !== activeId).map(n => (
+                      <option key={n.id} value={n.id}>{n.title || 'Untitled'} · {n.date}</option>
+                    ))}
+                  </select>
+                </div>
+                <NoteEditor
+                  note={activeNote2}
+                  allTitles={allTitles}
+                  prefs={prefs} setPrefs={setPrefs}
+                  onChange={applyNoteUpdate}
+                  onDelete={() => removeNote(activeNote2.id)}
+                  onTogglePin={() => togglePin(activeNote2)}
+                  onMoveToNotebook={(id) => moveNoteToNotebook(activeNote2.id, id)}
+                  onDuplicate={() => duplicateNote(activeNote2.id)}
+                  onOpenWikiLink={openWikiLink}
+                  onJumpToTag={jumpToTag}
+                  notebooks={notebooks}
+                  twoUp={false}
+                  onToggleTwoUp={() => setTwoUp(true)}
+                />
+              </div>
+            </div>
+          ) : (
+            <NoteEditor
+              key={activeNote.id}
+              note={activeNote}
+              allTitles={allTitles}
+              prefs={prefs} setPrefs={setPrefs}
+              onChange={applyNoteUpdate}
+              onDelete={() => removeNote(activeNote.id)}
+              onTogglePin={() => togglePin(activeNote)}
+              onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
+              onDuplicate={() => duplicateNote(activeNote.id)}
+              onOpenWikiLink={openWikiLink}
+              onJumpToTag={jumpToTag}
+              notebooks={notebooks}
+              twoUp={twoUp}
+              onToggleTwoUp={() => setTwoUp(t => !t)}
             />
-          ))}
-          <button
-            onClick={addNote}
-            style={{
-              width: '100%', padding: '14px',
-              background: 'var(--surface-2)', border: '1px dashed var(--border-strong)',
-              borderRadius: 10, cursor: 'pointer',
-              color: 'var(--ink-2)', font: 'inherit', fontSize: 13,
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-            }}
-          >
-            <Icon.Plus size={13}/> New note
-          </button>
+          )}
         </div>
       </div>
     </main>
@@ -1847,35 +3326,63 @@ function Attachments({ taskId }) {
 function ShortcutsModal({ onClose }) {
   const isMac = typeof navigator !== 'undefined' && /Mac|iPod|iPhone|iPad/.test(navigator.platform);
   const meta = isMac ? '⌘' : 'Ctrl';
-  const rows = [
-    [`${meta} K`, 'Open command palette (search, jump to project, fire actions)'],
-    ['/', 'Focus the in-page search box'],
-    ['N', 'New task in current project'],
-    ['T', 'Go to Today view'],
-    ['A', 'Go to All Tasks view'],
-    ['Esc', 'Close palette / collapse expanded task'],
-    ['?', 'Show this help'],
+  const sections = [
+    {
+      title: 'Global',
+      rows: [
+        [`${meta} K`, 'Open command palette (search, jump, actions)'],
+        ['/', 'Focus the in-page search box'],
+        ['N', 'New task in current project'],
+        ['T', 'Go to Today view'],
+        ['A', 'Go to All Tasks view'],
+        ['Esc', 'Close palette / collapse expanded task'],
+        ['?', 'Show this help'],
+      ],
+    },
+    {
+      title: 'In a note',
+      rows: [
+        [`${meta} B`, 'Bold the selection'],
+        [`${meta} I`, 'Italicize the selection'],
+        [`${meta} K`, 'Wrap selection in a link'],
+        [`${meta} \``, 'Wrap selection in inline code'],
+        ['/', 'Open slash menu (heading, list, code, table, …)'],
+        ['[[', 'Open wiki-link autocomplete; pick or create a note'],
+        ['# tag', 'Auto-tag — appears in the rail and is clickable'],
+        ['Drop / paste image', 'Uploads + embeds Markdown image link'],
+        ['Click a checkbox in preview', 'Toggle - [ ] ↔ - [x] in the source'],
+      ],
+    },
   ];
   return (
     <div className="palette-overlay" onClick={onClose}>
-      <div className="palette" style={{ width: 520 }} onClick={(e) => e.stopPropagation()}>
+      <div className="palette" style={{ width: 600 }} onClick={(e) => e.stopPropagation()}>
         <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>Keyboard shortcuts</div>
+          <div style={{ fontWeight: 600, color: 'var(--ink)' }}>Keyboard shortcuts & tips</div>
           <button className="icon-btn" onClick={onClose}><Icon.X size={14}/></button>
         </div>
-        <div style={{ padding: 6 }}>
-          {rows.map(([key, label]) => (
-            <div key={key} style={{
-              display: 'flex', alignItems: 'center', gap: 16,
-              padding: '8px 14px', borderRadius: 6,
-            }}>
-              <kbd style={{
-                fontFamily: 'IBM Plex Mono, monospace', fontSize: 12,
-                background: 'var(--surface-2)', border: '1px solid var(--border)',
-                borderRadius: 4, padding: '2px 8px', color: 'var(--ink)',
-                minWidth: 56, textAlign: 'center',
-              }}>{key}</kbd>
-              <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{label}</span>
+        <div style={{ padding: '4px 6px 14px', maxHeight: '70vh', overflowY: 'auto' }}>
+          {sections.map(sec => (
+            <div key={sec.title}>
+              <div style={{
+                fontFamily: 'IBM Plex Mono, monospace', fontSize: 10,
+                textTransform: 'uppercase', letterSpacing: '0.12em',
+                color: 'var(--ink-3)', padding: '12px 14px 6px',
+              }}>{sec.title}</div>
+              {sec.rows.map(([key, label]) => (
+                <div key={sec.title + key} style={{
+                  display: 'flex', alignItems: 'center', gap: 16,
+                  padding: '7px 14px', borderRadius: 6,
+                }}>
+                  <kbd style={{
+                    fontFamily: 'IBM Plex Mono, monospace', fontSize: 11.5,
+                    background: 'var(--surface-2)', border: '1px solid var(--border)',
+                    borderRadius: 4, padding: '2px 8px', color: 'var(--ink)',
+                    minWidth: 110, textAlign: 'center',
+                  }}>{key}</kbd>
+                  <span style={{ color: 'var(--ink-2)', fontSize: 13 }}>{label}</span>
+                </div>
+              ))}
             </div>
           ))}
         </div>
