@@ -2,8 +2,19 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Task Board</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/svg+xml" href="/icon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14130f" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Taskboard">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="application-name" content="Taskboard">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Fraunces:opsz,wght@9..144,400;9..144,600&display=swap" rel="stylesheet">
@@ -58,12 +69,17 @@
     line-height: 1.5;
     overflow: hidden;
     transition: background 0.2s ease, color 0.2s ease;
+    /* iOS PWA: respect the notch / home indicator. No-op in browser tabs. */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
   }
   .app {
     display: grid;
     grid-template-columns: 280px 1fr;
-    height: 100vh;
-    width: 100vw;
+    height: 100%;
+    width: 100%;
   }
 
   /* ---------- Sidebar ---------- */
@@ -1419,11 +1435,18 @@ async function fetchServerData() {
   } catch (e) { return null; }
 }
 async function fetchSession() {
+  // Returns one of:
+  //   { authenticated: true,  user }       — proceed
+  //   { authenticated: false }              — redirect to /login.html
+  //   { offline: true }                     — render the app from local cache
   try {
     const r = await fetch('/api/session', { cache: 'no-store' });
     const j = await r.json();
-    return j.authenticated ? { id: j.id, username: j.username, role: j.role } : null;
-  } catch (e) { return null; }
+    if (j.authenticated) return { authenticated: true, user: { id: j.id, username: j.username, role: j.role } };
+    return { authenticated: false };
+  } catch (e) {
+    return { offline: true };
+  }
 }
 let _saveTimer = null;
 let _lastPosted = '';
@@ -4242,6 +4265,8 @@ function App() {
 
   const handleLogout = async () => {
     try { await fetch('/api/session', { method: 'DELETE' }); } catch (e) {}
+    // Tell the SW to drop any cached HTML so the next user gets a clean start.
+    try { navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_CACHES' }); } catch (e) {}
     location.replace('/login.html');
   };
 
@@ -4317,9 +4342,14 @@ function App() {
   useEffect(() => { saveData(data); }, [data]);
   useEffect(() => {
     (async () => {
-      const u = await fetchSession();
-      if (!u) { location.replace('/login.html'); return; }
-      setUser(u);
+      const s = await fetchSession();
+      if (s.offline) {
+        // Render from localStorage cache; show a hint instead of bouncing to login
+        showToast('Offline — showing cached data');
+        return;
+      }
+      if (!s.authenticated) { location.replace('/login.html'); return; }
+      setUser(s.user);
       const srv = await fetchServerData();
       if (srv) setData(srv);
     })();
@@ -4463,6 +4493,17 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
 
+</script>
+<script>
+  // PWA: register the service worker after the page settles. Best-effort; if
+  // it can't register (private mode, http on a mobile, etc.) the app still
+  // works exactly as before.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/service-worker.js', { scope: '/' })
+        .catch((e) => console.info('[pwa] sw registration skipped:', e?.message || e));
+    });
+  }
 </script>
 </body>
 </html>
