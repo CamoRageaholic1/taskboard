@@ -1288,6 +1288,95 @@
     z-index: 5;
   }
 
+  /* ==========================================================================
+   * Mobile / phone layout
+   *
+   * Desktop is grid: [280px sidebar | 1fr main]. On phones we collapse the
+   * sidebar to an off-canvas drawer toggled by the #m-menu hamburger; the
+   * #m-backdrop covers the main pane while the drawer is open.
+   * ========================================================================== */
+  #m-menu {
+    display: none;
+    position: fixed;
+    top: calc(10px + env(safe-area-inset-top));
+    left: calc(10px + env(safe-area-inset-left));
+    z-index: 110;
+    width: 40px; height: 40px;
+    align-items: center; justify-content: center;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--ink-2);
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: var(--shadow-sm);
+  }
+  #m-menu:active { transform: scale(0.96); }
+  #m-backdrop {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 99;
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    -webkit-tap-highlight-color: transparent;
+  }
+  body.nav-open #m-backdrop { display: block; opacity: 1; }
+  [data-theme="neon"] #m-backdrop { background: rgba(0,0,0,0.7); }
+
+  @media (max-width: 768px) {
+    /* Stop iOS Safari from auto-zooming when an input is focused */
+    input, textarea, select, [contenteditable="true"] {
+      font-size: 16px !important;
+    }
+    /* Single-column app shell — sidebar leaves the flow */
+    .app { grid-template-columns: 1fr; }
+    .sidebar {
+      position: fixed;
+      top: 0; bottom: 0; left: 0;
+      width: 280px; max-width: 85vw;
+      z-index: 100;
+      transform: translateX(-100%);
+      transition: transform 0.22s ease;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.25);
+      padding-top: env(safe-area-inset-top);
+      padding-bottom: env(safe-area-inset-bottom);
+      overflow-y: auto;
+    }
+    body.nav-open .sidebar { transform: translateX(0); }
+    body.nav-open { overflow: hidden; }
+    #m-menu { display: inline-flex; }
+
+    /* Make room at the top of main for the hamburger so it doesn't overlap text */
+    .main-header {
+      padding: 16px 16px 12px 60px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .header-left { flex: 1 1 100%; min-width: 0; }
+    .main-header h1, .main-title { font-size: 22px !important; }
+    /* Tighten generic inner padding so cards don't get crushed */
+    .main { font-size: 15px; }
+
+    /* Honest tap targets on common controls */
+    .btn, .btn-primary, .icon-btn, button:not(.theme-toggle):not(#m-menu) {
+      min-height: 36px;
+    }
+    /* Notes pane (rail + editor) — stack instead of side-by-side */
+    .notes-shell { grid-template-columns: 1fr !important; }
+    .notes-rail { max-height: 40vh; border-right: none; border-bottom: 1px solid var(--border); }
+    .editor-pane { grid-template-columns: 1fr !important; }
+
+    /* Modal / palette — use most of the screen */
+    .modal, .palette { max-width: calc(100vw - 24px) !important; }
+  }
+
+  /* Tablet / small laptop — sidebar stays but narrower */
+  @media (min-width: 769px) and (max-width: 1024px) {
+    .app { grid-template-columns: 240px 1fr; }
+    .main-header { padding: 20px 24px 16px; }
+  }
+
   /* PDF print stylesheet */
   @media print {
     body, .app, .main, .notes-shell { background: white !important; color: black !important; overflow: visible !important; }
@@ -1306,6 +1395,14 @@
 </style>
 </head>
 <body>
+<button id="m-menu" type="button" aria-label="Toggle navigation" aria-expanded="false">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+    <line x1="3" y1="6" x2="21" y2="6"/>
+    <line x1="3" y1="12" x2="21" y2="12"/>
+    <line x1="3" y1="18" x2="21" y2="18"/>
+  </svg>
+</button>
+<div id="m-backdrop" aria-hidden="true"></div>
 <div id="app" class="app"></div>
 
 <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
@@ -4572,6 +4669,42 @@ function App() {
 
 ReactDOM.createRoot(document.getElementById('app')).render(<App/>);
 
+</script>
+<script>
+  // Mobile drawer wiring — vanilla, no React touch.
+  // Toggles body.nav-open; hamburger + backdrop + sidebar nav-item clicks all
+  // converge on the same setter.
+  (function () {
+    var btn = document.getElementById('m-menu');
+    var bd  = document.getElementById('m-backdrop');
+    var body = document.body;
+    if (!btn || !bd) return;
+    function setOpen(open) {
+      body.classList.toggle('nav-open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    btn.addEventListener('click', function () { setOpen(!body.classList.contains('nav-open')); });
+    bd.addEventListener('click', function () { setOpen(false); });
+    // Close drawer when the user picks a nav item (event delegation — survives re-renders)
+    document.addEventListener('click', function (e) {
+      if (!body.classList.contains('nav-open')) return;
+      var t = e.target;
+      while (t && t !== document.body) {
+        if (t.classList && (t.classList.contains('nav-item') || t.classList.contains('project-item'))) {
+          setOpen(false); break;
+        }
+        t = t.parentNode;
+      }
+    }, true);
+    // ESC closes the drawer too
+    document.addEventListener('keydown', function (e) {
+      if (e.key === 'Escape' && body.classList.contains('nav-open')) setOpen(false);
+    });
+    // Close drawer if viewport grows past the breakpoint (rotation, etc.)
+    window.matchMedia('(min-width: 769px)').addEventListener('change', function (m) {
+      if (m.matches) setOpen(false);
+    });
+  })();
 </script>
 <script>
   // PWA: register the service worker after the page settles. Best-effort; if
