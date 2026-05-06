@@ -1742,7 +1742,7 @@ function ThemeToggle({ theme, setTheme }) {
   );
 }
 
-function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick, user, onLogout, onOpenPalette, onOpenHelp }) {
+function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportClick, user, onLogout, onOpenPalette, onOpenHelp, onOpenTwoFA }) {
   const [renamingId, setRenamingId] = useState(null);
   const [renameVal, setRenameVal] = useState('');
   const [dragProjectId, setDragProjectId] = useState(null);
@@ -1949,7 +1949,10 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
           {user?.role === 'admin'
             ? <a href="/admin.html" style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>ADMIN PANEL</a>
             : <span/>}
-          <a href="#" onClick={(e) => { e.preventDefault(); onLogout?.(); }} style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>SIGN OUT</a>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <a href="#" onClick={(e) => { e.preventDefault(); onOpenTwoFA?.(); }} style={{ color: 'var(--ink-3)', textDecoration: 'none' }} title="Set up two-factor authentication">2FA</a>
+            <a href="#" onClick={(e) => { e.preventDefault(); onLogout?.(); }} style={{ color: 'var(--ink-3)', textDecoration: 'none' }}>SIGN OUT</a>
+          </div>
         </div>
       </div>
     </aside>
@@ -4535,6 +4538,7 @@ function App() {
         onLogout={handleLogout}
         onOpenPalette={() => setPaletteOpen(true)}
         onOpenHelp={() => setHelpOpen(true)}
+        onOpenTwoFA={() => setTwoFAOpen(true)}
       />
       {data.activeView === 'notes'
         ? <NotesView initialDate={notesInitialDate}/>
