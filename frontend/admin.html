@@ -10,17 +10,60 @@
 <meta name="theme-color" content="#f6f4ef" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#14130f" media="(prefers-color-scheme: dark)">
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<script>
+  // Apply the user's theme from the main app BEFORE first paint to avoid a flash.
+  // Storage key matches index.html (THEME_KEY = 'task-board-theme').
+  (function () {
+    try {
+      var t = localStorage.getItem('task-board-theme');
+      if (t === 'light' || t === 'dark' || t === 'neon') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    } catch (e) { /* localStorage blocked — fall back to OS preference */ }
+  })();
+</script>
 <style>
+  /* Light (default) */
   :root {
     --bg: #f6f4ef; --surface: #fbfaf6; --surface-2: #efece4; --border: #e2ddd0;
     --ink: #1c1b18; --ink-2: #4a4842; --ink-3: #807c70;
-    --accent: #c1542a; --danger: #b04030; --success: #5c7a3a;
+    --accent: #c1542a; --accent-fg: #ffffff;
+    --danger: #b04030; --success: #5c7a3a;
   }
+  /* OS dark only when the user hasn't picked a theme on the board */
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #14130f; --surface: #1c1b17; --surface-2: #25241f; --border: #2e2c26;
-            --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
-            --accent: #e87a4a; --danger: #d96050; --success: #8aa860; }
+    :root:not([data-theme]) {
+      --bg: #14130f; --surface: #1c1b17; --surface-2: #25241f; --border: #2e2c26;
+      --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
+      --accent: #e87a4a; --accent-fg: #ffffff;
+      --danger: #d96050; --success: #8aa860;
+    }
   }
+  /* Explicit picks (mirror the main app's theme tokens) */
+  [data-theme="dark"] {
+    --bg: #14130f; --surface: #1c1b17; --surface-2: #25241f; --border: #2e2c26;
+    --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
+    --accent: #e87a4a; --accent-fg: #ffffff;
+    --danger: #d96050; --success: #8aa860;
+  }
+  [data-theme="neon"] {
+    --bg: #0a0a0a; --surface: #121211; --surface-2: #1a1a18; --border: #1f2a1f;
+    --ink: #e8ffe8; --ink-2: #a8d8a8; --ink-3: #6a7d68;
+    --accent: #39ff14; --accent-fg: #001a00;
+    --danger: #ff2a6d; --success: #39ff14;
+  }
+  /* Neon needs dark text on the bright accent for legibility */
+  [data-theme="neon"] .pill.admin,
+  [data-theme="neon"] button.primary { color: var(--accent-fg); }
+  [data-theme="neon"] .toast { background: var(--accent); color: var(--accent-fg); }
+  /* Theme toggle button */
+  .theme-toggle {
+    background: transparent; border: 1px solid var(--border); color: var(--ink-2);
+    padding: 5px 8px; border-radius: 6px; cursor: pointer; line-height: 0;
+    margin-left: 16px; vertical-align: middle;
+  }
+  .theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .theme-toggle svg { width: 14px; height: 14px; display: block; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: 'Inter', -apple-system, sans-serif; background: var(--bg); color: var(--ink); padding: 32px; min-height: 100vh; }
   header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; }
@@ -63,6 +106,7 @@
   <div class="links">
     <a href="/">Back to board</a>
     <a href="#" id="logout">Sign out</a>
+    <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Cycle theme" title="Cycle theme"></button>
   </div>
 </header>
 
@@ -231,6 +275,34 @@ $('#logout').addEventListener('click', async (e) => {
   await fetch('/api/session', { method: 'DELETE' });
   location.replace('/login.html');
 });
+
+// Theme toggle — cycles light → dark → neon, stored at the same key as the main app
+const THEMES = ['light', 'dark', 'neon'];
+const THEME_LABELS = { light: 'Light', dark: 'Dark', neon: 'Electric' };
+const ICON_SUN  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+const ICON_ZAP  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+function currentTheme() {
+  return document.documentElement.getAttribute('data-theme') || 'light';
+}
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  try { localStorage.setItem('task-board-theme', t); } catch (e) {}
+  paintToggle();
+}
+function paintToggle() {
+  const btn = $('#theme-toggle'); if (!btn) return;
+  const cur = currentTheme();
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  btn.innerHTML = next === 'dark' ? ICON_MOON : next === 'neon' ? ICON_ZAP : ICON_SUN;
+  btn.title = `Theme: ${THEME_LABELS[cur]} → ${THEME_LABELS[next]}`;
+}
+$('#theme-toggle').addEventListener('click', () => {
+  const cur = currentTheme();
+  const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+  applyTheme(next);
+});
+paintToggle();
 
 (async () => {
   if (!(await gate())) return;
