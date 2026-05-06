@@ -17,24 +17,55 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,600&display=swap" rel="stylesheet">
+<script>
+  // Apply the user's last theme from the main app BEFORE first paint to avoid a flash.
+  // Storage key matches index.html (THEME_KEY = 'task-board-theme').
+  (function () {
+    try {
+      var t = localStorage.getItem('task-board-theme');
+      if (t === 'light' || t === 'dark' || t === 'neon') {
+        document.documentElement.setAttribute('data-theme', t);
+      }
+    } catch (e) { /* fall back to OS preference */ }
+  })();
+</script>
 <style>
+  /* Light (default) */
   :root {
-    --bg: #f6f4ef;
-    --surface: #fbfaf6;
-    --border: #e2ddd0;
-    --ink: #1c1b18;
-    --ink-2: #4a4842;
-    --ink-3: #807c70;
-    --accent: #c1542a;
-    --danger: #b04030;
+    --bg: #f6f4ef; --surface: #fbfaf6; --border: #e2ddd0;
+    --ink: #1c1b18; --ink-2: #4a4842; --ink-3: #807c70;
+    --accent: #c1542a; --accent-fg: #ffffff; --danger: #b04030;
   }
+  /* OS dark only when no explicit pick */
   @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme]) {
       --bg: #14130f; --surface: #1c1b17; --border: #2e2c26;
       --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
-      --accent: #e87a4a; --danger: #d96050;
+      --accent: #e87a4a; --accent-fg: #ffffff; --danger: #d96050;
     }
   }
+  [data-theme="dark"] {
+    --bg: #14130f; --surface: #1c1b17; --border: #2e2c26;
+    --ink: #f1ede1; --ink-2: #c5c0b1; --ink-3: #8a8676;
+    --accent: #e87a4a; --accent-fg: #ffffff; --danger: #d96050;
+  }
+  [data-theme="neon"] {
+    --bg: #0a0a0a; --surface: #121211; --border: #1f2a1f;
+    --ink: #e8ffe8; --ink-2: #a8d8a8; --ink-3: #6a7d68;
+    --accent: #39ff14; --accent-fg: #001a00; --danger: #ff2a6d;
+  }
+  [data-theme="neon"] .card {
+    box-shadow: 0 12px 32px rgba(0,0,0,0.7), 0 0 28px rgba(57,255,20,0.10);
+  }
+  [data-theme="neon"] button { color: var(--accent-fg); }
+  /* Theme cycle button — tucked in the top-right */
+  .theme-toggle {
+    position: fixed; top: 16px; right: 16px;
+    background: transparent; border: 1px solid var(--border); color: var(--ink-2);
+    padding: 6px 8px; border-radius: 6px; cursor: pointer; line-height: 0;
+  }
+  .theme-toggle:hover { color: var(--accent); border-color: var(--accent); }
+  .theme-toggle svg { width: 14px; height: 14px; display: block; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Inter', -apple-system, sans-serif;
@@ -79,7 +110,7 @@
     width: 100%;
     padding: 11px;
     background: var(--accent);
-    color: white;
+    color: var(--accent-fg);
     border: none;
     border-radius: 8px;
     font: inherit;
@@ -96,6 +127,7 @@
 </style>
 </head>
 <body>
+<button class="theme-toggle" id="theme-toggle" type="button" aria-label="Cycle theme" title="Cycle theme"></button>
 <div class="card">
   <h1><span class="mark">·</span>Taskboard</h1>
   <div class="sub">Sign in to continue</div>
@@ -115,6 +147,30 @@
   </form>
 </div>
 <script>
+  // Theme toggle — cycles light → dark → electric, stored at the same key as the main app
+  (function () {
+    const THEMES = ['light', 'dark', 'neon'];
+    const LABELS = { light: 'Light', dark: 'Dark', neon: 'Electric' };
+    const ICON_SUN  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>';
+    const ICON_MOON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+    const ICON_ZAP  = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>';
+    const btn = document.getElementById('theme-toggle');
+    function current() { return document.documentElement.getAttribute('data-theme') || 'light'; }
+    function paint() {
+      const cur = current();
+      const next = THEMES[(THEMES.indexOf(cur) + 1) % THEMES.length];
+      btn.innerHTML = next === 'dark' ? ICON_MOON : next === 'neon' ? ICON_ZAP : ICON_SUN;
+      btn.title = `Theme: ${LABELS[cur]} → ${LABELS[next]}`;
+    }
+    btn.addEventListener('click', () => {
+      const next = THEMES[(THEMES.indexOf(current()) + 1) % THEMES.length];
+      document.documentElement.setAttribute('data-theme', next);
+      try { localStorage.setItem('task-board-theme', next); } catch (e) {}
+      paint();
+    });
+    paint();
+  })();
+
   const form = document.getElementById('f');
   const err = document.getElementById('e');
   const btn = document.getElementById('b');
