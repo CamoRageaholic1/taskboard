@@ -1,0 +1,8 @@
+# linode-prod-1 override — bind published port to loopback only.
+# Used together with the base docker-compose.yml:
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.linode.yml up -d
+
+services:
+  taskboard:
+    ports: !override
+      - "127.0.0.1:5050:5050"

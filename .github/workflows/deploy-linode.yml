@@ -1,0 +1,51 @@
+name: Deploy to linode-prod-1
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-taskboard-linode
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          DEPLOY_KEY:  ${{ secrets.LINODE_DEPLOY_KEY }}
+          KNOWN_HOSTS: ${{ secrets.LINODE_KNOWN_HOSTS }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "$DEPLOY_KEY"  > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Sync repo to /opt/taskboard
+        run: |
+          rsync -av --delete \
+            --exclude='.git/' \
+            --exclude='.github/' \
+            --exclude='.DS_Store' \
+            ./ root@69.164.210.236:/opt/taskboard/
+
+      - name: Build & restart container
+        run: |
+          ssh root@69.164.210.236 'set -e; cd /opt/taskboard && \
+            docker compose -f docker-compose.yml -f deploy/docker-compose.linode.yml pull --ignore-buildable && \
+            docker compose -f docker-compose.yml -f deploy/docker-compose.linode.yml build && \
+            docker compose -f docker-compose.yml -f deploy/docker-compose.linode.yml up -d --remove-orphans'
+
+      - name: Sync nginx vhost and reload
+        run: |
+          scp deploy/nginx.taskboard.camozeroday.dev.conf root@69.164.210.236:/etc/nginx/sites-available/taskboard.camozeroday.dev
+          ssh root@69.164.210.236 'ln -sf /etc/nginx/sites-available/taskboard.camozeroday.dev /etc/nginx/sites-enabled/taskboard.camozeroday.dev && nginx -t && systemctl reload nginx'
+
+      - name: Smoke test
+        run: |
+          sleep 5
+          curl -fsS https://taskboard.camozeroday.dev/api/health
