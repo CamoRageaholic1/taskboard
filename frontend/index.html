@@ -227,6 +227,15 @@
     font-size: 11px;
     color: var(--ink-3);
   }
+  .nav-item-time {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 10px;
+    color: var(--ink-3);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+  }
 
   .project-item {
     position: relative;
@@ -679,6 +688,27 @@
     transition: opacity 0.12s;
   }
   .subtask:hover .subtask-delete { opacity: 1; }
+  .subtask-time {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    color: var(--ink-3);
+    font-size: 11.5px;
+  }
+  .subtask-time select {
+    font-family: inherit;
+    font-size: 11.5px;
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 4px;
+    cursor: pointer;
+    outline: none;
+  }
+  .subtask-time select:hover { color: var(--ink); border-color: var(--ink-4); }
+  .subtask-time-sep { font-size: 10.5px; color: var(--ink-4); }
 
   .add-subtask {
     background: transparent;
@@ -1436,6 +1466,8 @@ const Icon = {
   Drag: () => <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="8" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>,
   Repeat: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
   Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
+  Archive: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>,
+  Chevron: ({ size = 12, dir = 'down' }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: dir === 'right' ? 'rotate(-90deg)' : 'none', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>,
 };
 
 // Theme cycle: light → dark → neon → light. Persisted via loadTheme/saveTheme.
@@ -1627,6 +1659,24 @@ function saveTheme(t) { localStorage.setItem(THEME_KEY, t); }
 // ---------- Helpers ----------
 const uid = () => Math.random().toString(36).slice(2, 10);
 const todayStr = () => new Date().toISOString().slice(0, 10);
+
+function projectMinutes(p) {
+  let total = 0;
+  for (const t of (p.tasks || [])) {
+    for (const s of (t.subtasks || [])) {
+      const m = Number(s.timeSpent);
+      if (Number.isFinite(m) && m > 0) total += m;
+    }
+  }
+  return total;
+}
+function formatMinutes(m) {
+  const h = Math.floor(m / 60);
+  const mm = m % 60;
+  if (h && mm) return `${h}h ${mm}m`;
+  if (h) return `${h}h`;
+  return `${mm}m`;
+}
 
 function formatDueDate(dateStr) {
   if (!dateStr) return null;
@@ -1844,6 +1894,7 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
   const [renameVal, setRenameVal] = useState('');
   const [dragProjectId, setDragProjectId] = useState(null);
   const [dropProjectTarget, setDropProjectTarget] = useState(null);
+  const [archivedOpen, setArchivedOpen] = useState(false);
   const renameInputRef = useRef(null);
 
   useEffect(() => {
@@ -1871,9 +1922,20 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
     setData(d => {
       const projects = d.projects.filter(p => p.id !== id);
       const activeProjectId = d.activeProjectId === id
-        ? (projects[0]?.id || null)
+        ? (projects.find(p => !p.archived)?.id || projects[0]?.id || null)
         : d.activeProjectId;
       return { ...d, projects, activeProjectId, activeView: 'project' };
+    });
+  };
+  const toggleArchive = (id) => {
+    setData(d => {
+      const projects = d.projects.map(p => p.id === id ? { ...p, archived: !p.archived } : p);
+      const target = projects.find(p => p.id === id);
+      let activeProjectId = d.activeProjectId;
+      if (target?.archived && d.activeProjectId === id) {
+        activeProjectId = projects.find(p => !p.archived)?.id || null;
+      }
+      return { ...d, projects, activeProjectId };
     });
   };
   const addProject = () => {
@@ -1952,11 +2014,11 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
       <div className="sidebar-section">
         <div className="section-label">
           <span>Projects</span>
-          <span className="count">{data.projects.length}</span>
+          <span className="count">{data.projects.filter(p => !p.archived).length}</span>
         </div>
       </div>
       <div className="sidebar-list">
-        {data.projects.map(p => {
+        {data.projects.filter(p => !p.archived).map(p => {
           const isActive = data.activeView === 'project' && data.activeProjectId === p.id;
           const open = p.tasks.filter(t => !t.completed).length;
           return (
@@ -2011,8 +2073,10 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
               ) : (
                 <>
                   <span className="nav-item-label">{p.name}</span>
+                  <span className="nav-item-time" title="Time spent on this project">{formatMinutes(projectMinutes(p))}</span>
                   <div className="project-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="icon-btn" title="Rename" onClick={() => startRename(p)}><Icon.Edit size={11}/></button>
+                    <button className="icon-btn" title={p.archived ? 'Unarchive' : 'Archive'} onClick={() => toggleArchive(p.id)}><Icon.Archive size={11}/></button>
                     <button className="icon-btn" title="Delete" onClick={() => deleteProject(p.id)}><Icon.Trash size={11}/></button>
                   </div>
                   {!renamingId && <span className="nav-item-count">{open}</span>}
@@ -2025,6 +2089,56 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
           <Icon.Plus size={12}/> New project
         </button>
       </div>
+
+      {(() => {
+        const archived = data.projects.filter(p => p.archived);
+        return (
+          <>
+            <div className="sidebar-section">
+              <div
+                className="section-label"
+                style={{ cursor: 'pointer', userSelect: 'none' }}
+                onClick={() => setArchivedOpen(o => !o)}
+                title={archivedOpen ? 'Collapse archived' : 'Expand archived'}
+              >
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <Icon.Chevron size={10} dir={archivedOpen ? 'down' : 'right'}/>
+                  <Icon.Archive size={11}/>
+                  Archived
+                </span>
+                <span className="count">{archived.length}</span>
+              </div>
+            </div>
+            {archivedOpen && (
+              <div className="sidebar-list">
+                {archived.length === 0 ? (
+                  <div style={{ padding: '4px 16px', fontSize: 11.5, color: 'var(--ink-4)' }}>
+                    No archived projects.
+                  </div>
+                ) : archived.map(p => {
+                  const isActive = data.activeView === 'project' && data.activeProjectId === p.id;
+                  return (
+                    <div
+                      key={p.id}
+                      className="nav-item project-item"
+                      onClick={() => setProject(p.id)}
+                      style={{ opacity: 0.7, ...(isActive ? { background: 'var(--surface-2)', color: 'var(--ink)', opacity: 1 } : {}) }}
+                    >
+                      <span className="nav-dot" style={{ background: isActive ? p.color : undefined, opacity: isActive ? 1 : 0.5 }}/>
+                      <span className="nav-item-label">{p.name}</span>
+                      <span className="nav-item-time" title="Time spent on this project">{formatMinutes(projectMinutes(p))}</span>
+                      <div className="project-actions" onClick={(e) => e.stopPropagation()}>
+                        <button className="icon-btn" title="Unarchive" onClick={() => toggleArchive(p.id)}><Icon.Archive size={11}/></button>
+                        <button className="icon-btn" title="Delete" onClick={() => deleteProject(p.id)}><Icon.Trash size={11}/></button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        );
+      })()}
 
       <div className="sidebar-section" style={{ padding: '8px 12px 0', flexShrink: 0 }}>
         <div style={{ display: 'flex', gap: 6, padding: '0 0 8px' }}>
@@ -2056,7 +2170,12 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
   );
 }
 
-function SubtaskItem({ st, onToggle, onChange, onDelete, onEnter }) {
+function SubtaskItem({ st, onToggle, onChange, onTimeChange, onDelete, onEnter }) {
+  const minutes = Number.isFinite(st.timeSpent) ? st.timeSpent : 0;
+  const hours = Math.floor(minutes / 60);
+  const mins = minutes % 60;
+  const setHours = (h) => onTimeChange(h * 60 + mins);
+  const setMins = (m) => onTimeChange(hours * 60 + m);
   return (
     <div className={`subtask ${st.done ? 'checked' : ''}`}>
       <button className={`subtask-checkbox ${st.done ? 'checked' : ''}`} onClick={onToggle}>
@@ -2072,6 +2191,18 @@ function SubtaskItem({ st, onToggle, onChange, onDelete, onEnter }) {
         }}
         placeholder="Subtask"
       />
+      <div className="subtask-time" title="Time spent">
+        <select value={hours} onChange={(e) => setHours(Number(e.target.value))} aria-label="Hours">
+          {Array.from({ length: 25 }, (_, i) => <option key={i} value={i}>{i}h</option>)}
+        </select>
+        <span className="subtask-time-sep">:</span>
+        <select value={mins} onChange={(e) => setMins(Number(e.target.value))} aria-label="Minutes">
+          <option value={0}>00m</option>
+          <option value={15}>15m</option>
+          <option value={30}>30m</option>
+          <option value={45}>45m</option>
+        </select>
+      </div>
       <button className="icon-btn subtask-delete" onClick={onDelete}><Icon.X size={12}/></button>
     </div>
   );
@@ -3878,7 +4009,7 @@ function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, 
   const updateField = (k, v) => onUpdate({ ...task, [k]: v });
 
   const addSubtask = () => {
-    const newSt = { id: uid(), title: '', done: false };
+    const newSt = { id: uid(), title: '', done: false, timeSpent: 0 };
     onUpdate({ ...task, subtasks: [...task.subtasks, newSt] });
     setTimeout(() => {
       const inputs = document.querySelectorAll(`[data-task-id="${task.id}"] .subtask-input`);
@@ -4027,6 +4158,7 @@ function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, 
                   st={st}
                   onToggle={() => updateSubtask(st.id, { done: !st.done })}
                   onChange={(v) => updateSubtask(st.id, { title: v })}
+                  onTimeChange={(m) => updateSubtask(st.id, { timeSpent: m })}
                   onDelete={() => deleteSubtask(st.id)}
                   onEnter={addSubtask}
                 />
@@ -4088,6 +4220,7 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
       const today = todayStr();
       const tasks = [];
       data.projects.forEach(p => {
+        if (p.archived) return;
         p.tasks.forEach(t => {
           if (!t.completed && t.dueDate && t.dueDate <= today) {
             tasks.push({ ...t, _projectId: p.id });
@@ -4098,7 +4231,10 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
     }
     if (data.activeView === 'all') {
       const tasks = [];
-      data.projects.forEach(p => p.tasks.forEach(t => tasks.push({ ...t, _projectId: p.id })));
+      data.projects.forEach(p => {
+        if (p.archived) return;
+        p.tasks.forEach(t => tasks.push({ ...t, _projectId: p.id }));
+      });
       return { displayTasks: tasks, viewTitle: 'All Tasks', viewSubtitle: 'Across every project', viewProject: null };
     }
     if (!activeProject) {
@@ -4183,7 +4319,7 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
                 id: uid(),
                 completed: false,
                 dueDate: nextDue,
-                subtasks: cleaned.subtasks.map(s => ({ ...s, id: uid(), done: false })),
+                subtasks: cleaned.subtasks.map(s => ({ ...s, id: uid(), done: false, timeSpent: 0 })),
               };
               return [cleaned, reset];
             }
@@ -4476,6 +4612,7 @@ function App() {
           name: p.name || 'Untitled',
           color: p.color || '#c1542a',
           createdAt: p.createdAt || Date.now(),
+          archived: !!p.archived,
           tasks: (p.tasks || []).map(t => ({
             id: t.id || uid(),
             title: t.title || '',
@@ -4487,6 +4624,7 @@ function App() {
               id: s.id || uid(),
               title: s.title || '',
               done: !!s.done,
+              timeSpent: Number.isFinite(s.timeSpent) ? Math.max(0, Math.round(s.timeSpent)) : 0,
             })),
           })),
         }));
@@ -4614,10 +4752,13 @@ function App() {
   const totals = useMemo(() => {
     const today = todayStr();
     let all = 0, todayCount = 0;
-    data.projects.forEach(p => p.tasks.forEach(t => {
-      if (!t.completed) all += 1;
-      if (!t.completed && t.dueDate && t.dueDate <= today) todayCount += 1;
-    }));
+    data.projects.forEach(p => {
+      if (p.archived) return;
+      p.tasks.forEach(t => {
+        if (!t.completed) all += 1;
+        if (!t.completed && t.dueDate && t.dueDate <= today) todayCount += 1;
+      });
+    });
     return { all, today: todayCount };
   }, [data]);
 
