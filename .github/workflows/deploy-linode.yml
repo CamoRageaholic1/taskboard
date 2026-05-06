@@ -46,7 +46,7 @@ jobs:
           scp deploy/nginx.taskboard.camozeroday.dev.conf root@69.164.210.236:/etc/nginx/sites-available/taskboard.camozeroday.dev
           ssh root@69.164.210.236 'ln -sf /etc/nginx/sites-available/taskboard.camozeroday.dev /etc/nginx/sites-enabled/taskboard.camozeroday.dev && nginx -t && systemctl reload nginx'
 
-      - name: Smoke test
+      - name: Smoke test (bypass Cloudflare, hit origin directly)
         run: |
           sleep 5
-          curl -fsS https://taskboard.camozeroday.dev/api/health
+          curl -fsS --resolve taskboard.camozeroday.dev:443:69.164.210.236 https://taskboard.camozeroday.dev/api/health
