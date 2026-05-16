@@ -1,0 +1,59 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-taskboard
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to ct202
+    runs-on: [self-hosted, taskboard-ct202]
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { clean: true }
+
+      - name: Sync repo into /opt/taskboard
+        # Preserve .env and the named docker volume; rsync code only.
+        run: |
+          sudo rsync -a --delete \
+            --exclude '.env' \
+            --exclude '.git' \
+            --exclude '.github' \
+            ./ /opt/taskboard/
+
+      - name: Rebuild + restart container
+        working-directory: /opt/taskboard
+        run: |
+          sudo docker compose up -d --build
+          sudo docker ps --filter name=taskboard --format '{{.Names}} {{.Status}}'
+
+      - name: Smoke test
+        run: |
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if curl -sf http://localhost:8083/ >/dev/null; then
+              echo "taskboard healthy"; exit 0
+            fi
+            sleep 2
+          done
+          sudo docker logs --tail 50 taskboard
+          exit 1
+
+      - name: Purge Cloudflare edge cache
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ZONE:  ${{ secrets.CLOUDFLARE_ZONE_ID }}
+        run: |
+          if [ -z "$CF_TOKEN" ] || [ -z "$CF_ZONE" ]; then
+            echo "CF secrets not set, skipping"; exit 0
+          fi
+          curl -sS -X POST \
+            -H "Authorization: Bearer $CF_TOKEN" \
+            -H "Content-Type: application/json" \
+            "https://api.cloudflare.com/client/v4/zones/$CF_ZONE/purge_cache" \
+            --data '{"hosts":["taskboard.camozeroday.dev"]}' | head -3
