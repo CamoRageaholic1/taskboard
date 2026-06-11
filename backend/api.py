@@ -381,6 +381,7 @@ def delete_backup(bid):
 # ---------- notes (per-user daily capture pad + freeform notebooks) ----------
 
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_ID_RE = re.compile(r"^[A-Za-z0-9_-]{6,32}$")  # client-supplied note ids (offline create)
 _TAG_RE = re.compile(r"(?<![\w/])#([A-Za-z0-9][\w-]{0,63})")
 _WIKILINK_RE = re.compile(r"\[\[([^\[\]\n]{1,200})\]\]")
 
@@ -609,7 +610,24 @@ def create_note():
     title = (payload.get("title") or "")[:300]
     body = (payload.get("body") or "")[:50_000]
     pinned = 1 if payload.get("pinned") else 0
-    nid = short_id()
+    # Optional client-supplied id enables idempotent offline create: a note
+    # drafted while offline gets a stable id on the device, so replaying the
+    # queued create (or a double-submit) returns the existing note instead of
+    # duplicating it.
+    cid = payload.get("id")
+    if cid is not None:
+        if not _ID_RE.match(str(cid)):
+            return jsonify(error="invalid id"), 400
+        cid = str(cid)
+        with db() as conn:
+            existing = conn.execute(
+                f"SELECT {_NOTE_COLS} FROM notes WHERE id=? AND user_id=?", (cid, uid)
+            ).fetchone()
+        if existing:
+            return jsonify(_note_dict(existing)), 200
+        nid = cid
+    else:
+        nid = short_id()
     ts = now_iso()
     with db() as conn:
         # Place at end of current bucket (highest sort_order + 1)
@@ -889,7 +907,24 @@ def upload_note_image(note_id):
         if not dest.exists():
             os.replace(tmp_path, dest)
             tmp_path = None
-        att_id = short_id()
+        # Optional client-supplied attachment id: a sketch/photo drawn while
+        # offline gets a stable id and markdown URL on the device, so replaying
+        # the queued upload is idempotent and the embed resolves once synced.
+        cid = request.form.get("id")
+        if cid:
+            if not _ID_RE.match(cid):
+                return jsonify(error="invalid id"), 400
+            with db() as conn:
+                existing = conn.execute(
+                    "SELECT filename,mime,size FROM attachments WHERE id=? AND user_id=?",
+                    (cid, uid),
+                ).fetchone()
+            if existing:
+                return jsonify(id=cid, url=f"/api/attachments/{cid}",
+                               filename=existing[0], mime=existing[1], size=existing[2]), 200
+            att_id = cid
+        else:
+            att_id = short_id()
         ts = now_iso()
         with db() as conn:
             conn.execute(

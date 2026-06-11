@@ -1435,6 +1435,11 @@ const Icon = {
   Upload: ({ size = 12 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>,
   Drag: () => <svg width="10" height="14" viewBox="0 0 10 14" fill="currentColor"><circle cx="2" cy="2" r="1.2"/><circle cx="8" cy="2" r="1.2"/><circle cx="2" cy="7" r="1.2"/><circle cx="8" cy="7" r="1.2"/><circle cx="2" cy="12" r="1.2"/><circle cx="8" cy="12" r="1.2"/></svg>,
   Repeat: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>,
+  Archive: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>,
+  Unarchive: ({ size = 11 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><polyline points="9 15 12 12 15 15"/><line x1="12" y1="12" x2="12" y2="18"/></svg>,
+  Camera: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>,
+  Pen: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/></svg>,
+  CloudOff: ({ size = 13 }) => <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22.61 16.95A5 5 0 0 0 18 10h-1.26a8 8 0 0 0-7.05-6M5 5a8 8 0 0 0 4 15h9a5 5 0 0 0 1.7-.3"/><line x1="1" y1="1" x2="23" y2="23"/></svg>,
   Zap: () => <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>,
 };
 
@@ -1619,6 +1624,141 @@ function saveData(data) {
     } catch (e) {}
   }, 500);
 }
+
+/* ───────────────────────── Offline notes support ─────────────────────────
+ * The board already survives offline (localStorage + whole-blob re-POST). Notes
+ * are per-row API calls, so we add a durable write-queue (IndexedDB "outbox")
+ * plus a blob store for sketch/photo uploads. Notes get client-generated ids so
+ * a queued create can be replayed idempotently. On reconnect we drain the queue
+ * in order. A small badge surfaces online/queued state. Single-user, last-write-wins.
+ */
+function genShortId() {
+  const b = new Uint8Array(8);
+  (window.crypto || {}).getRandomValues?.(b) || b.fill(Math.floor(256 * 0.5));
+  return btoa(String.fromCharCode(...b)).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+const OfflineDB = (() => {
+  let _db = null;
+  function open() {
+    if (_db) return Promise.resolve(_db);
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('tb-offline', 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('outbox')) db.createObjectStore('outbox', { keyPath: 'k', autoIncrement: true });
+        if (!db.objectStoreNames.contains('blobs')) db.createObjectStore('blobs', { keyPath: 'id' });
+      };
+      req.onsuccess = () => { _db = req.result; resolve(_db); };
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function tx(store, mode, fn) {
+    return open().then(db => new Promise((resolve, reject) => {
+      const t = db.transaction(store, mode);
+      const s = t.objectStore(store);
+      const out = fn(s);
+      t.oncomplete = () => resolve(out._result !== undefined ? out._result : out);
+      t.onerror = () => reject(t.error);
+    }));
+  }
+  return {
+    enqueue: (op) => tx('outbox', 'readwrite', (s) => { s.add({ ...op, ts: Date.now() }); return {}; }),
+    all: () => tx('outbox', 'readonly', (s) => { const o = {}; s.getAll().onsuccess = (e) => { o._result = e.target.result; }; return o; }),
+    del: (k) => tx('outbox', 'readwrite', (s) => { s.delete(k); return {}; }),
+    count: () => tx('outbox', 'readonly', (s) => { const o = {}; s.count().onsuccess = (e) => { o._result = e.target.result; }; return o; }),
+    putBlob: (id, blob) => tx('blobs', 'readwrite', (s) => { s.put({ id, blob }); return {}; }),
+    getBlob: (id) => tx('blobs', 'readonly', (s) => { const o = {}; s.get(id).onsuccess = (e) => { o._result = e.target.result?.blob; }; return o; }),
+    delBlob: (id) => tx('blobs', 'readwrite', (s) => { s.delete(id); return {}; }),
+  };
+})();
+
+function offlineChanged() { try { window.dispatchEvent(new CustomEvent('tb-offline-changed')); } catch (e) {} }
+
+// Create a note — client id makes the queued create idempotent.
+async function apiCreateNote(payload) {
+  const id = payload.id || genShortId();
+  const full = { id, ...payload };
+  const optimistic = {
+    id, date: payload.date || todayStr(), title: payload.title || '', body: payload.body || '',
+    pinned: payload.pinned ? 1 : 0, notebook_id: payload.notebook_id || null,
+    created_at: new Date().toISOString(), updated_at: new Date().toISOString(),
+    sort_order: 0, _pending: true,
+  };
+  try {
+    const r = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(full) });
+    if (r.ok) return await r.json();
+    if (r.status === 401) { location.replace('/login.html'); return optimistic; }
+  } catch (e) {}
+  await OfflineDB.enqueue({ kind: 'note.create', payload: full }); offlineChanged();
+  return optimistic;
+}
+
+// Patch a note. Returns {ok, offline, note?}.
+async function apiPatchNote(id, patch) {
+  try {
+    const r = await fetch(`/api/notes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(patch) });
+    if (r.ok) return { ok: true, offline: false, note: await r.json() };
+    if (r.status === 401) { location.replace('/login.html'); return { ok: false, offline: false }; }
+    return { ok: false, offline: false };
+  } catch (e) {
+    await OfflineDB.enqueue({ kind: 'note.patch', id, patch }); offlineChanged();
+    return { ok: true, offline: true };
+  }
+}
+
+// Upload an image to a note. Client attachment id => the markdown URL is stable
+// even before the upload syncs, and the SW can serve the blob offline.
+async function apiUploadNoteImage(noteId, file) {
+  const attId = genShortId();
+  const fd = new FormData();
+  fd.append('file', file); fd.append('id', attId);
+  try {
+    const r = await fetch(`/api/notes/${noteId}/images`, { method: 'POST', body: fd });
+    if (r.ok) return await r.json();
+  } catch (e) {}
+  // Offline: stash the blob, queue the upload, hand back the eventual URL.
+  await OfflineDB.putBlob(attId, file);
+  await OfflineDB.enqueue({ kind: 'note.image', noteId, attId, filename: file.name || 'image' });
+  offlineChanged();
+  return { id: attId, url: `/api/attachments/${attId}`, filename: file.name || 'image', _offline: true };
+}
+
+let _flushing = false;
+async function flushOutbox() {
+  if (_flushing || !navigator.onLine) return;
+  _flushing = true;
+  try {
+    const ops = (await OfflineDB.all()) || [];
+    ops.sort((a, b) => a.k - b.k);
+    for (const op of ops) {
+      try {
+        if (op.kind === 'note.create') {
+          const r = await fetch('/api/notes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.payload) });
+          if (!r.ok && r.status !== 200 && r.status !== 201) { if (r.status >= 500) break; }
+        } else if (op.kind === 'note.patch') {
+          const r = await fetch(`/api/notes/${op.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(op.patch) });
+          if (!r.ok && r.status >= 500) break;
+        } else if (op.kind === 'note.image') {
+          const blob = await OfflineDB.getBlob(op.attId);
+          if (blob) {
+            const fd = new FormData(); fd.append('file', blob, op.filename); fd.append('id', op.attId);
+            const r = await fetch(`/api/notes/${op.noteId}/images`, { method: 'POST', body: fd });
+            if (!r.ok && r.status >= 500) break;
+          }
+          await OfflineDB.delBlob(op.attId);
+        }
+        await OfflineDB.del(op.k);
+      } catch (e) { break; }  // still offline — stop, retry later
+    }
+    offlineChanged();
+    try { broadcastNotes({ type: 'list-changed' }); } catch (e) {}
+  } finally { _flushing = false; }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => { flushOutbox(); });
+}
+
 function loadTheme() {
   return localStorage.getItem(THEME_KEY) || 'light';
 }
@@ -1717,7 +1857,7 @@ function CommandPalette({ data, onClose, onAction }) {
     list.push({ kind: 'view', id: 'view-today', label: 'Go to Today', hint: 'View', action: { type: 'view', view: 'today' } });
     list.push({ kind: 'view', id: 'view-all', label: 'Go to All Tasks', hint: 'View', action: { type: 'view', view: 'all' } });
     list.push({ kind: 'view', id: 'view-notes', label: 'Go to Daily Notes', hint: 'View', action: { type: 'view', view: 'notes' } });
-    data.projects.forEach(p => {
+    data.projects.filter(p => !p.archived).forEach(p => {
       list.push({ kind: 'project', id: 'p-' + p.id, label: p.name, hint: 'Project', color: p.color, action: { type: 'project', id: p.id } });
     });
     list.push({ kind: 'action', id: 'a-newtask', label: 'New task in current project', hint: 'Action', action: { type: 'newtask' } });
@@ -1844,6 +1984,7 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
   const [renameVal, setRenameVal] = useState('');
   const [dragProjectId, setDragProjectId] = useState(null);
   const [dropProjectTarget, setDropProjectTarget] = useState(null);
+  const [showArchived, setShowArchived] = useState(false);
   const renameInputRef = useRef(null);
 
   useEffect(() => {
@@ -1871,10 +2012,28 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
     setData(d => {
       const projects = d.projects.filter(p => p.id !== id);
       const activeProjectId = d.activeProjectId === id
-        ? (projects[0]?.id || null)
+        ? (projects.find(p => !p.archived)?.id || null)
         : d.activeProjectId;
       return { ...d, projects, activeProjectId, activeView: 'project' };
     });
+  };
+  const archiveProject = (id) => {
+    setData(d => {
+      const projects = d.projects.map(p => p.id === id ? { ...p, archived: true } : p);
+      // If we just archived the active project, jump to the first live one.
+      const activeProjectId = d.activeProjectId === id
+        ? (projects.find(p => !p.archived)?.id || null)
+        : d.activeProjectId;
+      return { ...d, projects, activeProjectId };
+    });
+  };
+  const unarchiveProject = (id) => {
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => p.id === id ? { ...p, archived: false } : p),
+      activeProjectId: id,
+      activeView: 'project',
+    }));
   };
   const addProject = () => {
     const colors = ['#c1542a', '#5c7a3a', '#b88820', '#6b5b8a', '#3a6e7a', '#a04060'];
@@ -1952,13 +2111,14 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
       <div className="sidebar-section">
         <div className="section-label">
           <span>Projects</span>
-          <span className="count">{data.projects.length}</span>
+          <span className="count">{data.projects.filter(p => !p.archived).length}</span>
         </div>
       </div>
       <div className="sidebar-list">
-        {data.projects.map(p => {
+        {data.projects.filter(p => !p.archived).map(p => {
           const isActive = data.activeView === 'project' && data.activeProjectId === p.id;
           const open = p.tasks.filter(t => !t.completed).length;
+          const allDone = p.tasks.length > 0 && open === 0;
           return (
             <div
               key={p.id}
@@ -2013,9 +2173,12 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
                   <span className="nav-item-label">{p.name}</span>
                   <div className="project-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="icon-btn" title="Rename" onClick={() => startRename(p)}><Icon.Edit size={11}/></button>
+                    <button className="icon-btn" title="Archive project" onClick={() => archiveProject(p.id)}><Icon.Archive size={11}/></button>
                     <button className="icon-btn" title="Delete" onClick={() => deleteProject(p.id)}><Icon.Trash size={11}/></button>
                   </div>
-                  {!renamingId && <span className="nav-item-count">{open}</span>}
+                  {!renamingId && (allDone
+                    ? <span className="nav-item-count" title="All tasks complete — ready to archive" style={{ color: 'var(--ok, #5c7a3a)' }}><Icon.Check size={11}/></span>
+                    : <span className="nav-item-count">{open}</span>)}
                 </>
               )}
             </div>
@@ -2024,6 +2187,32 @@ function Sidebar({ data, setData, theme, setTheme, totals, onExport, onImportCli
         <button className="add-project" onClick={addProject}>
           <Icon.Plus size={12}/> New project
         </button>
+
+        {data.projects.some(p => p.archived) && (
+          <div style={{ marginTop: 6 }}>
+            <div
+              className="section-label"
+              style={{ cursor: 'pointer', userSelect: 'none', display: 'flex', alignItems: 'center', gap: 6 }}
+              onClick={() => setShowArchived(s => !s)}
+              title="Completed / archived projects"
+            >
+              <span style={{ display: 'inline-flex', transform: showArchived ? 'rotate(90deg)' : 'none', transition: 'transform .12s' }}><Icon.Chevron/></span>
+              <Icon.Archive size={11}/>
+              <span>Archived</span>
+              <span className="count">{data.projects.filter(p => p.archived).length}</span>
+            </div>
+            {showArchived && data.projects.filter(p => p.archived).map(p => (
+              <div key={p.id} className="nav-item project-item" style={{ opacity: 0.7 }} onClick={() => unarchiveProject(p.id)} title="Click to restore">
+                <span className="nav-dot" style={{ opacity: 0.4 }}/>
+                <span className="nav-item-label" style={{ fontStyle: 'italic' }}>{p.name}</span>
+                <div className="project-actions" onClick={(e) => e.stopPropagation()}>
+                  <button className="icon-btn" title="Restore project" onClick={() => unarchiveProject(p.id)}><Icon.Unarchive size={11}/></button>
+                  <button className="icon-btn" title="Delete permanently" onClick={() => deleteProject(p.id)}><Icon.Trash size={11}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="sidebar-section" style={{ padding: '8px 12px 0', flexShrink: 0 }}>
@@ -2510,6 +2699,146 @@ function NotesRail({
 
 // ---------- Editor ----------
 
+// Full-screen freehand drawing pad. Two stacked canvases: a background layer
+// (white, or a photo to annotate) and a transparent stroke layer on top, so the
+// eraser only removes ink, never the photo. Pointer events cover Apple Pencil,
+// finger, and mouse alike. No shape detection / snapping — just draw.
+function SketchPad({ bg, onPickPhoto, onCancel, onSave }) {
+  const COLORS = ['#1a1a1a', '#c1542a', '#2563eb', '#5c7a3a', '#b88820', '#ffffff'];
+  const SIZES = [2, 4, 9];
+  const wrapRef = useRef(null);
+  const bgRef = useRef(null);
+  const drawRef = useRef(null);
+  const drawing = useRef(false);
+  const last = useRef(null);
+  const undoStack = useRef([]);
+  const [color, setColor] = useState(COLORS[0]);
+  const [size, setSize] = useState(SIZES[1]);
+  const [erase, setErase] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const dpr = () => Math.min(window.devicePixelRatio || 1, 2);
+
+  useEffect(() => {
+    const wrap = wrapRef.current; if (!wrap) return;
+    const r = dpr();
+    const w = Math.max(320, wrap.clientWidth), h = Math.max(280, wrap.clientHeight);
+    for (const c of [bgRef.current, drawRef.current]) {
+      c.width = Math.round(w * r); c.height = Math.round(h * r);
+      c.style.width = w + 'px'; c.style.height = h + 'px';
+    }
+    const bctx = bgRef.current.getContext('2d');
+    bctx.fillStyle = '#ffffff';
+    bctx.fillRect(0, 0, bgRef.current.width, bgRef.current.height);
+    if (bg) {
+      const img = new Image();
+      img.onload = () => {
+        const cw = bgRef.current.width, ch = bgRef.current.height;
+        const k = Math.min(cw / img.width, ch / img.height);
+        const dw = img.width * k, dh = img.height * k;
+        bctx.drawImage(img, (cw - dw) / 2, (ch - dh) / 2, dw, dh);
+      };
+      img.src = bg;
+    }
+  }, [bg]);
+
+  const pos = (e) => {
+    const c = drawRef.current, rect = c.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) * (c.width / rect.width),
+             y: (e.clientY - rect.top) * (c.height / rect.height) };
+  };
+  const pushUndo = () => {
+    try {
+      const c = drawRef.current, ctx = c.getContext('2d');
+      undoStack.current.push(ctx.getImageData(0, 0, c.width, c.height));
+      if (undoStack.current.length > 15) undoStack.current.shift();
+    } catch (e) {}
+  };
+  const strokeTo = (p) => {
+    const ctx = drawRef.current.getContext('2d');
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.lineWidth = size * dpr();
+    ctx.globalCompositeOperation = erase ? 'destination-out' : 'source-over';
+    ctx.strokeStyle = color;
+    const a = last.current || p;
+    ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(p.x, p.y); ctx.stroke();
+    last.current = p;
+  };
+  const onDown = (e) => {
+    e.preventDefault();
+    try { drawRef.current.setPointerCapture(e.pointerId); } catch (err) {}
+    pushUndo();
+    drawing.current = true; last.current = pos(e); strokeTo(last.current);
+  };
+  const onMove = (e) => {
+    if (!drawing.current) return;
+    e.preventDefault();
+    const evs = e.nativeEvent.getCoalescedEvents ? e.nativeEvent.getCoalescedEvents() : [e];
+    for (const ev of evs) strokeTo(pos(ev));
+  };
+  const onUp = () => { drawing.current = false; last.current = null; };
+  const undo = () => { const s = undoStack.current.pop(); if (s) drawRef.current.getContext('2d').putImageData(s, 0, 0); };
+  const clearAll = () => { pushUndo(); const c = drawRef.current; c.getContext('2d').clearRect(0, 0, c.width, c.height); };
+  const save = () => {
+    setSaving(true);
+    const out = document.createElement('canvas');
+    out.width = bgRef.current.width; out.height = bgRef.current.height;
+    const o = out.getContext('2d');
+    o.drawImage(bgRef.current, 0, 0);
+    o.drawImage(drawRef.current, 0, 0);
+    out.toBlob((blob) => { if (blob) onSave(blob); else setSaving(false); }, 'image/png');
+  };
+
+  const tBtn = { padding: '6px 9px', border: '1px solid var(--border)', borderRadius: 6,
+                 background: 'var(--surface)', color: 'var(--ink-2)', cursor: 'pointer',
+                 font: 'inherit', fontSize: 12, display: 'flex', alignItems: 'center', gap: 5 };
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.55)',
+                  display: 'flex', flexDirection: 'column', padding: 12, gap: 10 }}
+         onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      {/* toolbar */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center',
+                    background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 10, padding: 8 }}>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {COLORS.map(c => (
+            <button key={c} title={c} onClick={() => { setColor(c); setErase(false); }}
+              style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', background: c,
+                       border: (color === c && !erase) ? '3px solid var(--accent)' : '2px solid var(--border)' }}/>
+          ))}
+        </div>
+        <span style={{ width: 1, height: 24, background: 'var(--border)' }}/>
+        <div style={{ display: 'flex', gap: 5 }}>
+          {SIZES.map((s, i) => (
+            <button key={s} title={['Fine','Medium','Bold'][i]} onClick={() => setSize(s)}
+              style={{ ...tBtn, width: 34, justifyContent: 'center',
+                       borderColor: size === s ? 'var(--accent)' : 'var(--border)' }}>
+              <span style={{ display: 'inline-block', width: s + 4, height: s + 4, borderRadius: '50%', background: 'var(--ink)' }}/>
+            </button>
+          ))}
+        </div>
+        <span style={{ width: 1, height: 24, background: 'var(--border)' }}/>
+        <button style={{ ...tBtn, borderColor: erase ? 'var(--accent)' : 'var(--border)' }}
+                onClick={() => setErase(e => !e)} title="Eraser">Eraser</button>
+        <button style={tBtn} onClick={undo} title="Undo last stroke">Undo</button>
+        <button style={tBtn} onClick={clearAll} title="Clear all ink">Clear</button>
+        {!bg && <button style={tBtn} onClick={onPickPhoto} title="Draw on top of a photo"><Icon.Camera size={12}/> Photo</button>}
+        <span style={{ flex: 1 }}/>
+        <button style={{ ...tBtn, color: 'var(--ink-3)' }} onClick={onCancel}>Cancel</button>
+        <button style={{ ...tBtn, background: 'var(--accent)', color: '#fff', borderColor: 'var(--accent)', opacity: saving ? 0.6 : 1 }}
+                disabled={saving} onClick={save}>{saving ? 'Saving…' : 'Save to note'}</button>
+      </div>
+      {/* canvas stack */}
+      <div ref={wrapRef} style={{ flex: 1, position: 'relative', borderRadius: 10, overflow: 'hidden',
+                                  border: '1px solid var(--border)', background: '#fff', minHeight: 0 }}>
+        <canvas ref={bgRef} style={{ position: 'absolute', inset: 0 }}/>
+        <canvas ref={drawRef}
+          style={{ position: 'absolute', inset: 0, touchAction: 'none', cursor: 'crosshair' }}
+          onPointerDown={onDown} onPointerMove={onMove}
+          onPointerUp={onUp} onPointerLeave={onUp} onPointerCancel={onUp}/>
+      </div>
+    </div>
+  );
+}
+
 function NoteEditor({
   note, allTitles, prefs, setPrefs,
   onChange, onDelete, onTogglePin, onMoveToNotebook, notebooks,
@@ -2523,10 +2852,25 @@ function NoteEditor({
   const [backlinks, setBacklinks] = useState([]);
   const [showBacklinks, setShowBacklinks] = useState(true);
   const [dropZone, setDropZone] = useState(false);
+  const [sketch, setSketch] = useState(null); // null | { bg: dataURL|null }  — open sketch pad
   const textareaRef = useRef(null);
   const previewRef = useRef(null);
   const saveTimer = useRef(null);
+  const cameraInputRef = useRef(null);
+  const sketchPhotoInputRef = useRef(null);
   const lastSaved = useRef({ title: note.title, body: note.body });
+
+  // Insert an uploaded image's markdown at the caret (shared by paste/drop/sketch/photo).
+  const insertImageMarkdown = (res, alt) => {
+    if (res) applyTextareaChange(setBody, textareaRef, `![${alt || 'image'}](${res.url})`, '', '');
+  };
+  // Read a File into a data URL (for using a photo as a sketch background).
+  const fileToDataURL = (file) => new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = reject;
+    fr.readAsDataURL(file);
+  });
 
   // Sync incoming note changes (e.g., from BroadcastChannel)
   useEffect(() => {
@@ -2544,22 +2888,16 @@ function NoteEditor({
       const patch = {};
       if (title !== lastSaved.current.title) patch.title = title;
       if (body !== lastSaved.current.body) patch.body = body;
-      try {
-        const r = await fetch(`/api/notes/${note.id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(patch),
-        });
-        if (r.ok) {
-          lastSaved.current = { title, body };
-          setSavedState('saved');
-          const updated = await r.json();
-          onChange?.(updated);
-          broadcastNotes({ type: 'note-changed', id: note.id });
-        } else {
-          setSavedState('error');
-        }
-      } catch (e) { setSavedState('error'); }
+      const res = await apiPatchNote(note.id, patch);
+      if (res.ok) {
+        lastSaved.current = { title, body };
+        setSavedState(res.offline ? 'offline' : 'saved');
+        if (res.note) onChange?.(res.note);
+        else onChange?.({ id: note.id, ...patch });  // optimistic (queued offline)
+        broadcastNotes({ type: 'note-changed', id: note.id });
+      } else {
+        setSavedState('error');
+      }
     }, 350);
     return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
   }, [title, body, note.id]);
@@ -2736,17 +3074,10 @@ function NoteEditor({
     setPopover(null);
   };
 
-  // Image upload (paste / drop)
+  // Image upload (paste / drop / sketch / photo) — offline-aware via the outbox.
   const uploadImage = async (file) => {
     if (!file || !file.type.startsWith('image/')) return null;
-    const fd = new FormData();
-    fd.append('file', file);
-    try {
-      const r = await fetch(`/api/notes/${note.id}/images`, { method: 'POST', body: fd });
-      const j = await r.json();
-      if (r.ok) return j;
-    } catch (e) {}
-    return null;
+    return await apiUploadNoteImage(note.id, file);
   };
 
   const onPaste = async (e) => {
@@ -2817,6 +3148,9 @@ function NoteEditor({
         <button title="Insert table" onClick={() => applyTextareaChange(setBody, textareaRef,
           '\n| Col A | Col B | Col C |\n| --- | --- | --- |\n| ', ' |  |  |\n', 'cell')}>⊞</button>
         <span className="sep"/>
+        <button title="Sketch (draw with Apple Pencil / finger)" onClick={() => setSketch({ bg: null })}><Icon.Pen size={13}/></button>
+        <button title="Take a photo (camera)" onClick={() => cameraInputRef.current?.click()}><Icon.Camera size={13}/></button>
+        <span className="sep"/>
         <select
           title="Font" value={prefs.font}
           onChange={(e) => setPrefs(p => ({ ...p, font: e.target.value }))}
@@ -2882,6 +3216,7 @@ function NoteEditor({
         <span className={savedState}>
           {savedState === 'saved' && '● saved'}
           {savedState === 'saving' && '● saving…'}
+          {savedState === 'offline' && '● saved offline (will sync)'}
           {savedState === 'error' && '● save failed (retrying)'}
         </span>
         <span>{wc} words · {cc} chars</span>
@@ -2916,6 +3251,40 @@ function NoteEditor({
         onHover={(i) => setPopover(p => p ? { ...p, selected: i } : p)}
         onPick={pickPopoverItem}
         onClose={() => setPopover(null)}
+      />}
+
+      {/* Camera capture — opens the iPad camera, embeds the photo */}
+      <input
+        ref={cameraInputRef} type="file" accept="image/*" capture="environment"
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0]; e.target.value = '';
+          if (!file) return;
+          const res = await uploadImage(file);
+          insertImageMarkdown(res, file.name || 'photo');
+        }}
+      />
+      {/* Pick a photo to draw on top of (sketch background) */}
+      <input
+        ref={sketchPhotoInputRef} type="file" accept="image/*"
+        style={{ display: 'none' }}
+        onChange={async (e) => {
+          const file = e.target.files?.[0]; e.target.value = '';
+          if (!file) return;
+          try { setSketch({ bg: await fileToDataURL(file) }); } catch (err) { setSketch({ bg: null }); }
+        }}
+      />
+
+      {sketch && <SketchPad
+        bg={sketch.bg}
+        onPickPhoto={() => sketchPhotoInputRef.current?.click()}
+        onCancel={() => setSketch(null)}
+        onSave={async (blob) => {
+          const file = new File([blob], `sketch-${Date.now()}.png`, { type: 'image/png' });
+          const res = await uploadImage(file);
+          insertImageMarkdown(res, 'sketch');
+          setSketch(null);
+        }}
       />}
     </div>
   );
@@ -2990,11 +3359,19 @@ function NotesView({ initialDate }) {
 
   const loadNotes = useCallback(async () => {
     const q = buildScopeQuery(scope);
+    const cacheKey = 'tb-notes-cache:' + q;
     try {
       const r = await fetch(`/api/notes?${q}`, { cache: 'no-store' });
       if (r.status === 401) { location.replace('/login.html'); return; }
-      if (r.ok) setNotes(await r.json());
-    } catch (e) {}
+      if (r.ok) {
+        const data = await r.json();
+        setNotes(data);
+        try { localStorage.setItem(cacheKey, JSON.stringify(data)); } catch (e) {}
+      }
+    } catch (e) {
+      // Offline: fall back to the last-seen notes for this scope so the pad still works.
+      try { const c = localStorage.getItem(cacheKey); if (c) setNotes(JSON.parse(c)); } catch (e2) {}
+    }
   }, [scope, buildScopeQuery]);
 
   const loadNotebooks = useCallback(async () => {
@@ -3058,19 +3435,15 @@ function NotesView({ initialDate }) {
     else if (scope.kind === 'today') body.date = todayStr();
     else if (scope.kind === 'pinned') { body.pinned = true; body.date = todayStr(); }
     // 'all' / 'tag' default to today, no notebook
-    try {
-      const r = await fetch('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      if (r.ok) {
-        const created = await r.json();
-        await loadNotes(); await loadTitles(); await loadDates();
-        setActiveId(created.id);
-        broadcastNotes({ type: 'list-changed' });
-      }
-    } catch (e) {}
+    const created = await apiCreateNote(body);
+    if (created._pending) {
+      // Offline: show it immediately from the optimistic object.
+      setNotes(prev => [created, ...prev.filter(n => n.id !== created.id)]);
+    } else {
+      await loadNotes(); await loadTitles(); await loadDates();
+    }
+    setActiveId(created.id);
+    broadcastNotes({ type: 'list-changed' });
   };
 
   const removeNote = async (id) => {
@@ -4420,6 +4793,39 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
   );
 }
 
+// Small status pill: shows only when offline or when writes are queued. On
+// mount and whenever connectivity returns, it drains the outbox.
+function NetBadge() {
+  const [online, setOnline] = useState(navigator.onLine);
+  const [pending, setPending] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const refresh = async () => { try { const n = await OfflineDB.count(); if (alive) setPending(n || 0); } catch (e) {} };
+    const on = () => { setOnline(true); refresh(); };
+    const off = () => { setOnline(false); refresh(); };
+    window.addEventListener('online', on);
+    window.addEventListener('offline', off);
+    window.addEventListener('tb-offline-changed', refresh);
+    refresh();
+    flushOutbox().then(refresh);
+    const iv = setInterval(refresh, 5000);
+    return () => { alive = false; window.removeEventListener('online', on); window.removeEventListener('offline', off); window.removeEventListener('tb-offline-changed', refresh); clearInterval(iv); };
+  }, []);
+  if (online && pending === 0) return null;
+  const label = !online
+    ? (pending > 0 ? `Offline · ${pending} queued` : 'Offline')
+    : `Syncing ${pending}…`;
+  return (
+    <div style={{ position: 'fixed', left: 12, bottom: 12, zIndex: 9998, display: 'flex',
+                  alignItems: 'center', gap: 6, padding: '6px 11px', borderRadius: 20, fontSize: 12,
+                  background: online ? 'var(--surface-2)' : '#8a4a2a', color: online ? 'var(--ink-2)' : '#fff',
+                  border: '1px solid var(--border)', boxShadow: '0 2px 8px rgba(0,0,0,0.18)' }}
+         title={online ? 'Syncing queued offline changes' : 'No connection — changes are saved on-device and will sync automatically'}>
+      <Icon.CloudOff size={13}/> {label}
+    </div>
+  );
+}
+
 function App() {
   const [data, setData] = useState(loadData);
   const [theme, setTheme] = useState(loadTheme);
@@ -4658,6 +5064,7 @@ function App() {
         }}
       />
       <div className={`toast ${toast ? 'show' : ''}`}>{toast}</div>
+      <NetBadge/>
       {paletteOpen && <CommandPalette data={data} onClose={() => setPaletteOpen(false)} onAction={handlePaletteAction}/>}
       {backupsOpen && <BackupsModal onClose={() => setBackupsOpen(false)} onRestore={(d) => setData(d)}/>}
       {feedOpen && <CalendarFeedModal onClose={() => setFeedOpen(false)}/>}

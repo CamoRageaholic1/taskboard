@@ -3,9 +3,31 @@
 // fallback when the device is offline.
 //
 // Bump SHELL_VERSION to invalidate the shell cache on the next page load.
-const SHELL_VERSION = 'v2';
+const SHELL_VERSION = 'v3';
 const SHELL_CACHE = `taskboard-shell-${SHELL_VERSION}`;
 const CDN_CACHE   = `taskboard-cdn-${SHELL_VERSION}`;
+
+// Read a queued-offline image blob from the page's IndexedDB outbox. Lets a
+// sketch/photo drawn offline still render (via its /api/attachments/<id> URL)
+// across reloads, before the upload has synced.
+function idbGetBlob(id) {
+  return new Promise((resolve) => {
+    let req;
+    try { req = indexedDB.open('tb-offline', 1); } catch (e) { return resolve(null); }
+    req.onupgradeneeded = () => { try { req.transaction.abort(); } catch (e) {} };
+    req.onerror = () => resolve(null);
+    req.onsuccess = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains('blobs')) { db.close(); return resolve(null); }
+      try {
+        const t = db.transaction('blobs', 'readonly');
+        const g = t.objectStore('blobs').get(id);
+        g.onsuccess = () => { resolve(g.result ? g.result.blob : null); db.close(); };
+        g.onerror = () => { resolve(null); db.close(); };
+      } catch (e) { resolve(null); db.close(); }
+    };
+  });
+}
 
 // App shell URLs — same-origin static assets that we want available offline.
 const SHELL_URLS = [
@@ -74,7 +96,23 @@ self.addEventListener('fetch', (event) => {
 
   // ---- Same-origin requests ----
   if (url.origin === self.location.origin) {
-    // Never intercept API calls — auth-sensitive, often stateful, and the
+    // Attachments (images) are content-addressed and safe to serve offline.
+    // Network-first; on failure, fall back to the queued-offline blob (a sketch
+    // or photo not yet uploaded) so it still renders inside notes.
+    if (url.pathname.startsWith('/api/attachments/')) {
+      event.respondWith((async () => {
+        try {
+          const fresh = await fetch(req);
+          if (fresh.ok) return fresh;
+        } catch (e) { /* offline */ }
+        const id = url.pathname.split('/').pop();
+        const blob = await idbGetBlob(id);
+        if (blob) return new Response(blob, { headers: { 'Content-Type': blob.type || 'image/png' } });
+        return new Response('Offline', { status: 503 });
+      })());
+      return;
+    }
+    // Never intercept other API calls — auth-sensitive, often stateful, and the
     // app is built to handle network failures itself (localStorage cache,
     // BroadcastChannel sync). Letting the browser do its thing keeps the
     // SW out of correctness questions around per-user data.
