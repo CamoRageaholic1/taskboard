@@ -1766,6 +1766,9 @@ function saveTheme(t) { localStorage.setItem(THEME_KEY, t); }
 
 // ---------- Helpers ----------
 const uid = () => Math.random().toString(36).slice(2, 10);
+const menuRow = { display: 'block', width: '100%', textAlign: 'left', padding: '7px 9px',
+  background: 'transparent', border: 'none', borderRadius: 5, cursor: 'pointer',
+  font: 'inherit', fontSize: 13, color: 'var(--ink)' };
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
 function formatDueDate(dateStr) {
@@ -2842,6 +2845,7 @@ function SketchPad({ bg, onPickPhoto, onCancel, onSave }) {
 function NoteEditor({
   note, allTitles, prefs, setPrefs,
   onChange, onDelete, onTogglePin, onMoveToNotebook, notebooks,
+  onSetProject, projects = [],
   onOpenWikiLink, onJumpToTag, onDuplicate,
   twoUp, onToggleTwoUp,
 }) {
@@ -3175,6 +3179,19 @@ function NoteEditor({
             {notebooks.map(nb => <option key={nb.id} value={nb.id}>{nb.name}</option>)}
           </select>
         )}
+        {onSetProject && projects.filter(p => !p.archived).length > 0 && (
+          <select
+            title="Link this note to a board project"
+            value={note.project_id || ''}
+            onChange={(e) => onSetProject(e.target.value || null)}
+            className="field-select"
+            style={{ background: 'transparent', border: '1px solid transparent', borderRadius: 5,
+                     padding: '4px 16px 4px 8px', color: note.project_id ? 'var(--accent)' : 'var(--ink-3)', fontSize: 11.5, cursor: 'pointer' }}
+          >
+            <option value="">📁 No project</option>
+            {projects.filter(p => !p.archived).map(p => <option key={p.id} value={p.id}>📁 {p.name}</option>)}
+          </select>
+        )}
         <span className="toolbar-spacer"/>
         <button title="Duplicate note" onClick={onDuplicate}>Duplicate</button>
         <button title="Print / Save as PDF" onClick={() => window.print()}>PDF</button>
@@ -3319,9 +3336,12 @@ function getCaretCoordinates(textarea, position) {
 
 // ---------- Notes view (top-level) ----------
 
-function NotesView({ initialDate }) {
+function NotesView({ initialDate, initialProject, projects = [], templates, onSaveTemplate }) {
+  const [tplMenu, setTplMenu] = useState(false);
+  const noteTemplates = useMemo(() => mergeTemplates('note', templates), [templates]);
   const [scope, setScope] = useState(
-    initialDate ? { kind: 'date', value: initialDate } : { kind: 'today', value: todayStr() }
+    initialProject ? { kind: 'project', id: initialProject.id, name: initialProject.name }
+    : initialDate ? { kind: 'date', value: initialDate } : { kind: 'today', value: todayStr() }
   );
   const [search, setSearch] = useState('');
   const [notes, setNotes] = useState([]);
@@ -3344,6 +3364,9 @@ function NotesView({ initialDate }) {
   useEffect(() => {
     if (initialDate) setScope({ kind: 'date', value: initialDate });
   }, [initialDate]);
+  useEffect(() => {
+    if (initialProject) setScope({ kind: 'project', id: initialProject.id, name: initialProject.name });
+  }, [initialProject?.id, initialProject?._t]);
 
   // ---- loaders ----
   const buildScopeQuery = useCallback((s) => {
@@ -3353,6 +3376,7 @@ function NotesView({ initialDate }) {
     else if (s.kind === 'all') { params.set('all', '1'); }
     else if (s.kind === 'pinned') { params.set('pinned', '1'); }
     else if (s.kind === 'notebook') { params.set('notebook_id', s.id); }
+    else if (s.kind === 'project') { params.set('project_id', s.id); }
     else if (s.kind === 'tag') { params.set('tag', s.value); }
     return params.toString();
   }, []);
@@ -3431,6 +3455,7 @@ function NotesView({ initialDate }) {
   const createNote = async () => {
     const body = {};
     if (scope.kind === 'notebook') body.notebook_id = scope.id;
+    else if (scope.kind === 'project') { body.project_id = scope.id; body.date = todayStr(); }
     else if (scope.kind === 'date') body.date = scope.value;
     else if (scope.kind === 'today') body.date = todayStr();
     else if (scope.kind === 'pinned') { body.pinned = true; body.date = todayStr(); }
@@ -3444,6 +3469,26 @@ function NotesView({ initialDate }) {
     }
     setActiveId(created.id);
     broadcastNotes({ type: 'list-changed' });
+  };
+
+  const createNoteFromTemplate = async (tpl) => {
+    setTplMenu(false);
+    const body = { title: tpl.builtin ? '' : tpl.name, body: (tpl.body || '').replace(/\{\{date\}\}/g, todayStr()) };
+    if (scope.kind === 'notebook') body.notebook_id = scope.id;
+    else if (scope.kind === 'project') body.project_id = scope.id;
+    body.date = scope.kind === 'date' ? scope.value : todayStr();
+    const created = await apiCreateNote(body);
+    if (created._pending) setNotes(prev => [created, ...prev.filter(n => n.id !== created.id)]);
+    else { await loadNotes(); await loadTitles(); await loadDates(); }
+    setActiveId(created.id);
+    broadcastNotes({ type: 'list-changed' });
+  };
+
+  const saveActiveNoteAsTemplate = () => {
+    if (!activeNote || !onSaveTemplate) return;
+    const name = (prompt('Save this note as a template named:', activeNote.title || 'My template') || '').trim();
+    if (!name) return;
+    onSaveTemplate('note', { name, body: activeNote.body || '' });
   };
 
   const removeNote = async (id) => {
@@ -3484,6 +3529,14 @@ function NotesView({ initialDate }) {
         broadcastNotes({ type: 'note-changed', id });
       }
     } catch (e) {}
+  };
+
+  const setProjectForNote = async (id, projectId) => {
+    const res = await apiPatchNote(id, { project_id: projectId || '' });
+    if (res.ok) {
+      applyNoteUpdate(res.note || { id, project_id: projectId || null });
+      broadcastNotes({ type: 'note-changed', id });
+    }
   };
 
   const duplicateNote = async (id) => {
@@ -3606,8 +3659,12 @@ function NotesView({ initialDate }) {
       const nb = notebooks.find(x => x.id === scope.id);
       return nb ? nb.name : 'Notebook';
     }
+    if (scope.kind === 'project') {
+      const p = projects.find(x => x.id === scope.id);
+      return `📁 ${p ? p.name : (scope.name || 'Project')}`;
+    }
     return 'Notes';
-  }, [scope, notebooks]);
+  }, [scope, notebooks, projects]);
 
   // 2-up secondary picker: when toggling on, choose any other note
   useEffect(() => {
@@ -3653,6 +3710,25 @@ function NotesView({ initialDate }) {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ position: 'relative' }}>
+            <button className="add-subtask" onClick={() => setTplMenu(v => !v)}>＋ Template ▾</button>
+            {tplMenu && (
+              <div className="popover-menu" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                   background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
+                   minWidth: 200, boxShadow: '0 6px 20px rgba(0,0,0,0.18)' }}>
+                <div style={{ fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '.04em' }}>New note from template</div>
+                {noteTemplates.map((t, i) => (
+                  <button key={i} className="menu-row" style={menuRow} onClick={() => createNoteFromTemplate(t)}>
+                    {t.builtin ? '◆ ' : '★ '}{t.name}
+                  </button>
+                ))}
+                {activeNote && onSaveTemplate && <>
+                  <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }}/>
+                  <button className="menu-row" style={menuRow} onClick={() => { setTplMenu(false); saveActiveNoteAsTemplate(); }}>＋ Save current note as template</button>
+                </>}
+              </div>
+            )}
+          </div>
           {scope.kind === 'date' && (
             <>
               <button className="add-subtask" onClick={() => {
@@ -3739,6 +3815,8 @@ function NotesView({ initialDate }) {
                 onDelete={() => removeNote(activeNote.id)}
                 onTogglePin={() => togglePin(activeNote)}
                 onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
+                onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
+                projects={projects}
                 onDuplicate={() => duplicateNote(activeNote.id)}
                 onOpenWikiLink={openWikiLink}
                 onJumpToTag={jumpToTag}
@@ -3767,6 +3845,8 @@ function NotesView({ initialDate }) {
                   onDelete={() => removeNote(activeNote2.id)}
                   onTogglePin={() => togglePin(activeNote2)}
                   onMoveToNotebook={(id) => moveNoteToNotebook(activeNote2.id, id)}
+                  onSetProject={(pid) => setProjectForNote(activeNote2.id, pid)}
+                  projects={projects}
                   onDuplicate={() => duplicateNote(activeNote2.id)}
                   onOpenWikiLink={openWikiLink}
                   onJumpToTag={jumpToTag}
@@ -3786,6 +3866,8 @@ function NotesView({ initialDate }) {
               onDelete={() => removeNote(activeNote.id)}
               onTogglePin={() => togglePin(activeNote)}
               onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
+              onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
+              projects={projects}
               onDuplicate={() => duplicateNote(activeNote.id)}
               onOpenWikiLink={openWikiLink}
               onJumpToTag={jumpToTag}
@@ -4417,7 +4499,168 @@ function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, 
   );
 }
 
-function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
+// ── Templates ──────────────────────────────────────────────────────────────
+// Built-in fiber-oriented templates. Custom ones live in data.templates (board
+// blob, so they sync + persist) and are merged on top.
+const BUILTIN_TEMPLATES = {
+  task: [
+    { name: 'Fiber Install', builtin: true, tasks: [
+      { title: 'Site walk + confirm scope', priority: 'high' },
+      { title: 'Pull fiber to drop', priority: 'high' },
+      { title: 'Terminate / splice ends', priority: 'med' },
+      { title: 'Test continuity + light levels', priority: 'high' },
+      { title: 'Label both ends + panel', priority: 'med' },
+      { title: 'Photo of finished work', priority: 'low' },
+      { title: 'Update records / as-built', priority: 'low' },
+    ]},
+    { name: 'Site Survey', builtin: true, tasks: [
+      { title: 'Confirm address + contact', priority: 'med' },
+      { title: 'Locate entry / demarc', priority: 'high' },
+      { title: 'Map interior cable route', priority: 'high' },
+      { title: 'Note obstacles (firestops, conduit)', priority: 'med' },
+      { title: 'Measure footage', priority: 'med' },
+      { title: 'Photos of each run', priority: 'low' },
+    ]},
+  ],
+  note: [
+    { name: 'Site Survey note', builtin: true, body:
+`# Site Survey — {{date}}
+
+**Address:**
+**Contact:**
+**Demarc / entry:**
+
+## Interior route
+-
+
+## Rack / panel
+| Port | Label | Destination | Status |
+| --- | --- | --- | --- |
+|  |  |  |  |
+
+## Obstacles / notes
+-
+
+## Photos
+` },
+    { name: 'Port map', builtin: true, body:
+`# Port Map — {{date}}
+
+| Port | Label | Cable ID | Destination | Tested |
+| --- | --- | --- | --- | --- |
+| 1 |  |  |  |  |
+| 2 |  |  |  |  |
+| 3 |  |  |  |  |
+` },
+  ],
+};
+function mergeTemplates(kind, custom) {
+  return [...BUILTIN_TEMPLATES[kind], ...((custom && custom[kind]) || [])];
+}
+
+// ── Project export ───────────────────────────────────────────────────────────
+async function fetchProjectNotes(projectId) {
+  try {
+    const r = await fetch(`/api/notes?project_id=${encodeURIComponent(projectId)}`, { cache: 'no-store' });
+    if (r.ok) return await r.json();
+  } catch (e) {}
+  return [];
+}
+const _statusOf = (t) => t.completed ? 'done' : 'open';
+const _subProgress = (t) => `${(t.subtasks || []).filter(s => s.done).length}/${(t.subtasks || []).length}`;
+
+async function exportProjectPDF(project) {
+  const notes = await fetchProjectNotes(project.id);
+  const esc = (s) => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const rows = (project.tasks || []).map(t => `<tr>
+    <td>${t.completed ? '☑' : '☐'}</td><td>${esc(t.title)}</td>
+    <td>${esc(t.priority || '')}</td><td>${esc(t.dueDate || '')}</td>
+    <td>${_subProgress(t)}</td><td>${esc(t.description || '')}</td></tr>`).join('');
+  const noteBlocks = notes.map(n => `<section><h3>${esc(n.title || 'Untitled')} <small>${esc(n.date)}</small></h3>
+    <pre>${esc(n.body || '')}</pre></section>`).join('');
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(project.name)}</title>
+    <style>body{font:13px/1.5 -apple-system,Segoe UI,sans-serif;color:#222;margin:32px;}
+    h1{margin:0 0 4px;} .meta{color:#666;margin-bottom:18px;}
+    table{border-collapse:collapse;width:100%;margin-bottom:24px;} th,td{border:1px solid #ccc;padding:6px 8px;text-align:left;vertical-align:top;font-size:12px;}
+    th{background:#f3f1ec;} section{margin:12px 0;page-break-inside:avoid;} pre{white-space:pre-wrap;background:#faf9f6;border:1px solid #eee;padding:8px;border-radius:4px;font:12px ui-monospace,monospace;}
+    @media print{button{display:none;}}</style></head><body>
+    <h1>${esc(project.name)}</h1>
+    <div class="meta">Project export · ${(project.tasks||[]).filter(t=>!t.completed).length} open · ${(project.tasks||[]).filter(t=>t.completed).length} done · ${notes.length} note(s)</div>
+    <button onclick="window.print()" style="padding:8px 14px;margin-bottom:16px;">Print / Save as PDF</button>
+    <table><thead><tr><th></th><th>Task</th><th>Priority</th><th>Due</th><th>Subtasks</th><th>Notes</th></tr></thead><tbody>${rows || '<tr><td colspan="6">No tasks</td></tr>'}</tbody></table>
+    ${noteBlocks ? '<h2>Linked notes</h2>' + noteBlocks : ''}
+    </body></html>`;
+  const w = window.open('', '_blank');
+  if (!w) { alert('Allow pop-ups to export the PDF.'); return; }
+  w.document.write(html); w.document.close();
+  setTimeout(() => { try { w.focus(); w.print(); } catch (e) {} }, 350);
+}
+
+async function exportProjectXLSX(project) {
+  const notes = await fetchProjectNotes(project.id);
+  const taskRows = (project.tasks || []).map(t => [
+    t.title || '', _statusOf(t), t.priority || '', t.dueDate || '', _subProgress(t), t.description || '',
+  ]);
+  const subRows = [];
+  (project.tasks || []).forEach(t => (t.subtasks || []).forEach(s =>
+    subRows.push([t.title || '', s.title || '', s.done ? 'done' : 'open'])));
+  const noteRows = notes.map(n => [n.title || 'Untitled', n.date || '', (n.body || '').slice(0, 4000)]);
+  const payload = {
+    filename: project.name || 'project',
+    sheets: [
+      { name: 'Tasks', headers: ['Title', 'Status', 'Priority', 'Due', 'Subtasks', 'Description'], rows: taskRows },
+      { name: 'Subtasks', headers: ['Task', 'Subtask', 'Status'], rows: subRows },
+      { name: 'Notes', headers: ['Title', 'Date', 'Body'], rows: noteRows },
+    ],
+  };
+  try {
+    const r = await fetch('/api/export/xlsx', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    if (!r.ok) { alert('Export failed (need a connection for XLSX).'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = (project.name || 'project').replace(/[^A-Za-z0-9_.-]/g, '_') + '.xlsx';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+  } catch (e) { alert('Export failed (need a connection for XLSX).'); }
+}
+
+// Panel of notes linked to the active project, shown under the task list.
+function LinkedNotesPanel({ project, onOpenNotes, onNewNote }) {
+  const [notes, setNotes] = useState([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    setLoading(true);
+    fetchProjectNotes(project.id).then(ns => { if (alive) { setNotes(ns); setLoading(false); } });
+    return () => { alive = false; };
+  }, [project.id]);
+  return (
+    <div style={{ marginTop: 28, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+        <Icon.Edit size={12}/>
+        <strong style={{ fontSize: 13 }}>Linked notes</strong>
+        <span className="meta-pill">{notes.length}</span>
+        <span style={{ flex: 1 }}/>
+        <button className="btn" style={{ fontSize: 12, padding: '5px 9px' }} onClick={onNewNote}><Icon.Plus size={12}/> New note</button>
+        {notes.length > 0 && <button className="btn" style={{ fontSize: 12, padding: '5px 9px' }} onClick={onOpenNotes}>Open in Notes →</button>}
+      </div>
+      {loading ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>Loading…</div>
+        : notes.length === 0
+          ? <div style={{ color: 'var(--ink-3)', fontSize: 12 }}>No notes linked yet. Use “New note”, or set a note’s project from the notes editor.</div>
+          : notes.slice(0, 12).map(n => (
+            <div key={n.id} onClick={onOpenNotes} style={{ display: 'flex', gap: 8, padding: '6px 8px', borderRadius: 6, cursor: 'pointer', alignItems: 'baseline' }}
+                 onMouseEnter={(e) => e.currentTarget.style.background = 'var(--surface-2)'}
+                 onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 13 }}>{n.title || 'Untitled'}</span>
+              <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{n.date}</span>
+            </div>
+          ))}
+    </div>
+  );
+}
+
+function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenProjectNotes }) {
   const [filter, setFilter] = useState('all'); // all | open | done
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -4427,6 +4670,7 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
   const [editingProjectName, setEditingProjectName] = useState(false);
   const [draggedTaskId, setDraggedTaskId] = useState(null);
   const [dropTarget, setDropTarget] = useState(null); // { id, where }
+  const [hdrMenu, setHdrMenu] = useState(null); // 'tpl' | 'export' | null
 
   // External triggers (keyboard shortcuts)
   useEffect(() => {
@@ -4596,6 +4840,37 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
     setExpandedId(newT.id);
   }, [newTaskTitle, activeProject, setData]);
 
+  // ── Templates ──
+  const taskTemplates = useMemo(() => mergeTemplates('task', data.templates), [data.templates]);
+  const applyTaskTemplate = (tpl) => {
+    if (!activeProject) return;
+    const newTasks = (tpl.tasks || []).map(t => ({
+      id: uid(), title: t.title, completed: false, priority: t.priority || 'none',
+      dueDate: '', description: t.description || '',
+      subtasks: (t.subtasks || []).map(s => ({ id: uid(), title: typeof s === 'string' ? s : s.title, done: false })),
+      recur: 'none',
+    }));
+    setData(d => ({
+      ...d,
+      projects: d.projects.map(p => p.id === activeProject.id ? { ...p, tasks: [...newTasks, ...p.tasks] } : p),
+    }));
+    setHdrMenu(null);
+  };
+  const saveProjectAsTemplate = () => {
+    if (!activeProject) return;
+    const name = (prompt('Save current tasks as a template named:', activeProject.name + ' template') || '').trim();
+    if (!name) return;
+    const tpl = { name, tasks: (activeProject.tasks || []).map(t => ({ title: t.title, priority: t.priority,
+      subtasks: (t.subtasks || []).map(s => s.title) })) };
+    setData(d => ({ ...d, templates: { ...(d.templates || {}), task: [...((d.templates || {}).task || []), tpl] } }));
+    setHdrMenu(null);
+  };
+  const newLinkedNote = async () => {
+    if (!activeProject) return;
+    await apiCreateNote({ project_id: activeProject.id, date: todayStr(), title: '' });
+    onOpenProjectNotes?.(activeProject);
+  };
+
   const renameProject = (newName) => {
     if (!activeProject) return;
     setData(d => ({
@@ -4729,11 +5004,46 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
             )}
           </div>
         </div>
-        <div className="header-right">
+        <div className="header-right" style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           {isProjectView && (
-            <button className="btn btn-primary" onClick={() => titleInputRef.current?.focus()}>
-              <Icon.Plus size={13}/> New task
-            </button>
+            <>
+              {/* Templates */}
+              <div style={{ position: 'relative' }}>
+                <button className="btn" style={{ fontSize: 12, padding: '6px 10px' }}
+                        onClick={() => setHdrMenu(m => m === 'tpl' ? null : 'tpl')}>Template ▾</button>
+                {hdrMenu === 'tpl' && (
+                  <div className="popover-menu" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                       background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
+                       minWidth: 200, boxShadow: '0 6px 20px rgba(0,0,0,0.18)' }}>
+                    <div style={{ fontSize: 10.5, color: 'var(--ink-3)', padding: '4px 8px', textTransform: 'uppercase', letterSpacing: '.04em' }}>Add tasks from template</div>
+                    {taskTemplates.map((t, i) => (
+                      <button key={i} className="menu-row" style={menuRow} onClick={() => applyTaskTemplate(t)}>
+                        {t.builtin ? '◆ ' : '★ '}{t.name} <span style={{ color: 'var(--ink-3)', fontSize: 11 }}>({(t.tasks || []).length})</span>
+                      </button>
+                    ))}
+                    <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }}/>
+                    <button className="menu-row" style={menuRow} onClick={saveProjectAsTemplate}>＋ Save this project as template</button>
+                  </div>
+                )}
+              </div>
+              {/* Export */}
+              <div style={{ position: 'relative' }}>
+                <button className="btn" style={{ fontSize: 12, padding: '6px 10px' }}
+                        onClick={() => setHdrMenu(m => m === 'export' ? null : 'export')}>Export ▾</button>
+                {hdrMenu === 'export' && (
+                  <div className="popover-menu" style={{ position: 'absolute', right: 0, top: '110%', zIndex: 50,
+                       background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: 6,
+                       minWidth: 170, boxShadow: '0 6px 20px rgba(0,0,0,0.18)' }}>
+                    <button className="menu-row" style={menuRow} onClick={() => { setHdrMenu(null); exportProjectPDF(activeProject); }}>📄 PDF (print)</button>
+                    <button className="menu-row" style={menuRow} onClick={() => { setHdrMenu(null); exportProjectXLSX(activeProject); }}>📊 Excel (.xlsx)</button>
+                  </div>
+                )}
+              </div>
+              <button className="btn" style={{ fontSize: 12, padding: '6px 10px' }} onClick={newLinkedNote}><Icon.Edit size={12}/> Notes</button>
+              <button className="btn btn-primary" onClick={() => titleInputRef.current?.focus()}>
+                <Icon.Plus size={13}/> New task
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -4787,6 +5097,14 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger }) {
             {renderGroup('noDate', 'No Deadline', groupedTasks.noDate)}
             {renderGroup('completed', 'Completed', groupedTasks.completed)}
           </>
+        )}
+
+        {isProjectView && (
+          <LinkedNotesPanel
+            project={activeProject}
+            onOpenNotes={() => onOpenProjectNotes?.(activeProject)}
+            onNewNote={newLinkedNote}
+          />
         )}
       </div>
     </main>
@@ -4947,6 +5265,7 @@ function App() {
   const [twoFAOpen, setTwoFAOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [notesInitialDate, setNotesInitialDate] = useState(null);
+  const [notesInitialProject, setNotesInitialProject] = useState(null);
   const newTaskRequestRef = useRef(0);
   const focusSearchRef = useRef(0);
   const [, forceTick] = useState(0);
@@ -5044,12 +5363,15 @@ function App() {
         onOpenTwoFA={() => setTwoFAOpen(true)}
       />
       {data.activeView === 'notes'
-        ? <NotesView initialDate={notesInitialDate}/>
+        ? <NotesView initialDate={notesInitialDate} initialProject={notesInitialProject} projects={data.projects}
+            templates={data.templates}
+            onSaveTemplate={(kind, tpl) => setData(d => ({ ...d, templates: { ...(d.templates || {}), [kind]: [...((d.templates || {})[kind] || []), tpl] } }))}/>
         : <MainView
             data={data}
             setData={setData}
             newTaskTrigger={newTaskRequestRef.current}
             focusSearchTrigger={focusSearchRef.current}
+            onOpenProjectNotes={(proj) => { setNotesInitialProject({ id: proj.id, name: proj.name, _t: Date.now() }); setData(d => ({ ...d, activeView: 'notes' })); }}
           />
       }
       <input

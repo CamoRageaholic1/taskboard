@@ -164,4 +164,14 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 6)
         version = 6
 
+    if version < 7:
+        # v6 -> v7: link a note to a board project. project_id references the
+        # client-side board blob's project id (no FK — the board is opaque JSON
+        # in the state table), so it's just an indexed text tag.
+        if "project_id" not in _table_columns(conn, "notes"):
+            conn.execute("ALTER TABLE notes ADD COLUMN project_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_project ON notes(user_id, project_id)")
+        _set_schema_version(conn, 7)
+        version = 7
+
     return version

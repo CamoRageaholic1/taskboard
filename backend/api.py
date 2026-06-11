@@ -391,17 +391,18 @@ def _today_iso() -> str:
 
 
 def _note_dict(row):
-    # row order: id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id
+    # row order: id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id
     return {
         "id": row[0], "date": row[1], "title": row[2], "body": row[3],
         "created_at": row[4], "updated_at": row[5],
         "pinned": bool(row[6]) if len(row) > 6 else False,
         "sort_order": row[7] if len(row) > 7 else 0,
         "notebook_id": row[8] if len(row) > 8 else None,
+        "project_id": row[9] if len(row) > 9 else None,
     }
 
 
-_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id"
+_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id"
 
 
 def _extract_tags(body: str) -> list[str]:
@@ -429,6 +430,7 @@ def list_notes():
     """
     uid = current_user_id()
     notebook_id = request.args.get("notebook_id")
+    project_id = request.args.get("project_id")
     all_flag = request.args.get("all") == "1"
     pinned_flag = request.args.get("pinned") == "1"
     tag = request.args.get("tag")
@@ -448,6 +450,10 @@ def list_notes():
     elif notebook_id:
         where.append("notebook_id=?")
         params.append(notebook_id)
+    elif project_id:
+        where.append("project_id=?")
+        params.append(project_id)
+        order = "ORDER BY pinned DESC, updated_at DESC"
     elif tag:
         # We can't index this — full-scan + Python filter (capped by date filter if any)
         where.append("notebook_id IS NULL OR notebook_id IS NOT NULL")  # noop, tag filter applied below
@@ -643,9 +649,9 @@ def create_note():
             ).fetchone()
         sort_order = row[0] if row else 0
         conn.execute(
-            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (nid, uid, date, title, body, ts, ts, pinned, sort_order, notebook_id),
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, date, title, body, ts, ts, pinned, sort_order, notebook_id, payload.get("project_id") or None),
         )
         row = conn.execute(
             f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)
@@ -686,6 +692,13 @@ def update_note(note_id):
                 return jsonify(error="notebook not found"), 404
             sets.append("notebook_id=?")
             params.append(nb)
+    if "project_id" in payload:
+        pid = payload["project_id"]
+        if pid in ("", None):
+            sets.append("project_id=NULL")
+        else:
+            sets.append("project_id=?")
+            params.append(str(pid)[:64])
     if not sets:
         return jsonify(error="no fields to update"), 400
     sets.append("updated_at=?")
@@ -752,9 +765,9 @@ def duplicate_note(note_id):
         ts = now_iso()
         new_title = (row[2] or "Untitled") + " (copy)"
         conn.execute(
-            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?)",
-            (nid, uid, row[1], new_title, row[3], ts, ts, 0, (row[7] or 0) + 1, row[8]),
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, row[1], new_title, row[3], ts, ts, 0, (row[7] or 0) + 1, row[8], row[9] if len(row) > 9 else None),
         )
         new_row = conn.execute(f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)).fetchone()
     return jsonify(_note_dict(new_row)), 201
@@ -1009,6 +1022,50 @@ def export_notes_zip():
         "Content-Type": "application/zip",
         "Content-Disposition": f'attachment; filename="taskboard-notes-{stamp}.zip"',
     }
+
+
+@APP.post("/api/export/xlsx")
+@require_user
+def export_xlsx():
+    """Generic spreadsheet export. Body: {filename, sheets:[{name, headers:[...],
+    rows:[[...]]}]}. Kept schema-agnostic so the client (which owns the board
+    blob) decides what to put in each sheet — projects, tasks, port maps, etc."""
+    try:
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+    except ImportError:
+        return jsonify(error="xlsx export not available on server"), 501
+
+    payload = request.get_json(silent=True) or {}
+    sheets = payload.get("sheets") or [{"name": "Sheet1", "headers": [], "rows": []}]
+    fn = re.sub(r"[^A-Za-z0-9_.-]", "_", str(payload.get("filename") or "export"))[:80] or "export"
+    if not fn.endswith(".xlsx"):
+        fn += ".xlsx"
+
+    wb = Workbook()
+    wb.remove(wb.active)
+    used = set()
+    for i, sh in enumerate(sheets[:25]):
+        raw = re.sub(r"[\[\]:*?/\\]", " ", str(sh.get("name") or f"Sheet{i + 1}"))[:31].strip() or f"Sheet{i + 1}"
+        name, n = raw, 2
+        while name.lower() in used:
+            suffix = f" ({n})"; name = raw[:31 - len(suffix)] + suffix; n += 1
+        used.add(name.lower())
+        ws = wb.create_sheet(title=name)
+        headers = sh.get("headers") or []
+        if headers:
+            ws.append([str(h) for h in headers][:50])
+            for c in ws[1]:
+                c.font = Font(bold=True)
+        for r in (sh.get("rows") or [])[:10000]:
+            ws.append([("" if v is None else v if isinstance(v, (int, float)) else str(v)) for v in r][:50])
+    bio = io.BytesIO()
+    wb.save(bio)
+    bio.seek(0)
+    return send_file(
+        bio, mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True, download_name=fn,
+    )
 
 
 # ---------- 2FA (TOTP) setup / enable / disable ----------
