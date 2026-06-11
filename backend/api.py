@@ -1096,7 +1096,9 @@ def export_xlsx():
         raw = re.sub(r"[\[\]:*?/\\]", " ", str(sh.get("name") or f"Sheet{i + 1}"))[:31].strip() or f"Sheet{i + 1}"
         name, n = raw, 2
         while name.lower() in used:
-            suffix = f" ({n})"; name = raw[:31 - len(suffix)] + suffix; n += 1
+            suffix = f" ({n})"
+            name = raw[:31 - len(suffix)] + suffix
+            n += 1
         used.add(name.lower())
         ws = wb.create_sheet(title=name)
         headers = sh.get("headers") or []
