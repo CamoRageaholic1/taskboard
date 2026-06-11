@@ -70,5 +70,19 @@ def test_note_task_id_create_filter_patch(client):
     assert client.get("/api/notes?task_id=t-99").json == []
 
 
+def test_export_xlsx_neutralizes_formula_injection(client):
+    payload = {"filename": "x", "sheets": [{"name": "S", "headers": ["A"],
+               "rows": [["=1+2"], ["=HYPERLINK(\"http://evil\")"], ["+cmd"], ["@SUM(1)"], ["-1"], ["safe"]]}]}
+    r = client.post("/api/export/xlsx", json=payload)
+    assert r.status_code == 200
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(r.data))["S"]
+    # No cell may be stored as a formula; values preserved verbatim as text.
+    for row in ws.iter_rows(min_row=2):
+        for cell in row:
+            assert cell.data_type != "f", f"formula leaked: {cell.value!r}"
+    assert ws["A2"].value == "=1+2"  # preserved, but as text
+
+
 def test_export_xlsx_requires_auth(anon_client):
     assert anon_client.post("/api/export/xlsx", json={"sheets": []}).status_code == 401

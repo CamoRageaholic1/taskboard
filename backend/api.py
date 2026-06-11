@@ -1074,6 +1074,12 @@ def export_xlsx():
                 c.font = Font(bold=True)
         for r in (sh.get("rows") or [])[:10000]:
             ws.append([("" if v is None else v if isinstance(v, (int, float)) else str(v)) for v in r][:50])
+            # Neutralize spreadsheet/formula injection: force any string cell
+            # that starts with a formula trigger to be stored as plain text so
+            # Excel/Sheets never evaluates it on open.
+            for c in ws[ws.max_row]:
+                if isinstance(c.value, str) and c.value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+                    c.data_type = "s"
     bio = io.BytesIO()
     wb.save(bio)
     bio.seek(0)
