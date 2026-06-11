@@ -238,6 +238,13 @@
     transition: opacity 0.15s;
   }
   .project-item:hover .project-actions { opacity: 1; }
+  /* Touch devices have no hover — always show the rename/archive/delete
+     actions, and give them tappable hit targets, so the feature is reachable
+     on a phone/tablet. */
+  @media (hover: none), (pointer: coarse) {
+    .project-item .project-actions, .rail-item .ri-actions { opacity: 1; }
+    .project-item .icon-btn { width: 30px; height: 30px; }
+  }
   .icon-btn {
     background: transparent;
     border: none;
@@ -2567,6 +2574,11 @@ function NotesRail({
             <span className="ri-icon" style={{ color: 'var(--warning)' }}><Icon.Star/></span>
             <span className="ri-label">Pinned</span>
           </div>
+          <div className={`rail-item ${scope.kind === 'archived' ? 'active' : ''}`}
+               onClick={() => setScope({ kind: 'archived' })}>
+            <span className="ri-icon"><Icon.Archive size={13}/></span>
+            <span className="ri-label">Archived</span>
+          </div>
         </div>
 
         <div className="rail-section">
@@ -2844,7 +2856,7 @@ function SketchPad({ bg, onPickPhoto, onCancel, onSave }) {
 
 function NoteEditor({
   note, allTitles, prefs, setPrefs,
-  onChange, onDelete, onTogglePin, onMoveToNotebook, notebooks,
+  onChange, onDelete, onTogglePin, onToggleArchive, onMoveToNotebook, notebooks,
   onSetProject, projects = [],
   onOpenWikiLink, onJumpToTag, onDuplicate,
   twoUp, onToggleTwoUp,
@@ -3133,6 +3145,11 @@ function NoteEditor({
         <button title="Pin / unpin" className={note.pinned ? 'active' : ''} onClick={onTogglePin}>
           <Icon.Star/>
         </button>
+        {onToggleArchive && (
+          <button title={note.archived ? 'Unarchive note' : 'Archive note'} className={note.archived ? 'active' : ''} onClick={onToggleArchive}>
+            {note.archived ? <Icon.Unarchive size={13}/> : <Icon.Archive size={13}/>}
+          </button>
+        )}
         <span className="sep"/>
         <button title="Edit only" className={prefs.layout === 'edit' && !twoUp ? 'active' : ''}
                 onClick={() => setPrefs(p => ({ ...p, layout: 'edit' }))}>Edit</button>
@@ -3381,6 +3398,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
     else if (s.kind === 'pinned') { params.set('pinned', '1'); }
     else if (s.kind === 'notebook') { params.set('notebook_id', s.id); }
     else if (s.kind === 'project') { params.set('project_id', s.id); }
+    else if (s.kind === 'archived') { params.set('archived', '1'); }
     else if (s.kind === 'tag') { params.set('tag', s.value); }
     return params.toString();
   }, []);
@@ -3497,6 +3515,15 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
     const name = (prompt('Save this note as a template named:', activeNote.title || 'My template') || '').trim();
     if (!name) return;
     onSaveTemplate('note', { name, body: activeNote.body || '' });
+  };
+
+  const archiveNote = async (n) => {
+    const res = await apiPatchNote(n.id, { archived: !n.archived });
+    if (res.ok) {
+      // The note leaves the current view (or the Archived view, on restore).
+      await loadNotes(); await loadDates();
+      broadcastNotes({ type: 'list-changed' });
+    }
   };
 
   const removeNote = async (id) => {
@@ -3662,6 +3689,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
     if (scope.kind === 'date') return scope.value;
     if (scope.kind === 'all') return 'All notes';
     if (scope.kind === 'pinned') return 'Pinned';
+    if (scope.kind === 'archived') return 'Archived';
     if (scope.kind === 'tag') return `#${scope.value}`;
     if (scope.kind === 'notebook') {
       const nb = notebooks.find(x => x.id === scope.id);
@@ -3823,6 +3851,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
                 onChange={applyNoteUpdate}
                 onDelete={() => removeNote(activeNote.id)}
                 onTogglePin={() => togglePin(activeNote)}
+                onToggleArchive={() => archiveNote(activeNote)}
                 onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
                 onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
                 projects={projects}
@@ -3853,6 +3882,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
                   onChange={applyNoteUpdate}
                   onDelete={() => removeNote(activeNote2.id)}
                   onTogglePin={() => togglePin(activeNote2)}
+                  onToggleArchive={() => archiveNote(activeNote2)}
                   onMoveToNotebook={(id) => moveNoteToNotebook(activeNote2.id, id)}
                   onSetProject={(pid) => setProjectForNote(activeNote2.id, pid)}
                   projects={projects}
@@ -3874,6 +3904,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
               onChange={applyNoteUpdate}
               onDelete={() => removeNote(activeNote.id)}
               onTogglePin={() => togglePin(activeNote)}
+              onToggleArchive={() => archiveNote(activeNote)}
               onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
               onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
               projects={projects}

@@ -400,10 +400,11 @@ def _note_dict(row):
         "notebook_id": row[8] if len(row) > 8 else None,
         "project_id": row[9] if len(row) > 9 else None,
         "task_id": row[10] if len(row) > 10 else None,
+        "archived": bool(row[11]) if len(row) > 11 else False,
     }
 
 
-_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id,task_id"
+_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id,task_id,archived"
 
 
 def _extract_tags(body: str) -> list[str]:
@@ -435,6 +436,7 @@ def list_notes():
     task_id = request.args.get("task_id")
     all_flag = request.args.get("all") == "1"
     pinned_flag = request.args.get("pinned") == "1"
+    archived_flag = request.args.get("archived") == "1"
     tag = request.args.get("tag")
     q = request.args.get("q")
     limit = max(1, min(int(request.args.get("limit") or 500), 500))
@@ -444,7 +446,10 @@ def list_notes():
     params: list = [uid]
     order = "ORDER BY pinned DESC, sort_order, created_at"
 
-    if all_flag:
+    if archived_flag:
+        where.append("archived=1")
+        order = "ORDER BY updated_at DESC"
+    elif all_flag:
         order = "ORDER BY pinned DESC, updated_at DESC"
     elif pinned_flag:
         where.append("pinned=1")
@@ -470,6 +475,10 @@ def list_notes():
         where.append("date=?")
         where.append("notebook_id IS NULL")
         params.append(date)
+
+    # Every view except the Archived view hides archived notes.
+    if not archived_flag:
+        where.append("archived=0")
 
     if q:
         ql = f"%{q.lower()}%"
@@ -685,6 +694,9 @@ def update_note(note_id):
     if "pinned" in payload:
         sets.append("pinned=?")
         params.append(1 if payload["pinned"] else 0)
+    if "archived" in payload:
+        sets.append("archived=?")
+        params.append(1 if payload["archived"] else 0)
     if "notebook_id" in payload:
         nb = payload["notebook_id"]
         if nb in ("", None):

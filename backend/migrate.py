@@ -183,4 +183,13 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 8)
         version = 8
 
+    if version < 9:
+        # v8 -> v9: per-note archive flag. Archived notes are hidden from the
+        # normal views and surface only in the dedicated Archived view.
+        if "archived" not in _table_columns(conn, "notes"):
+            conn.execute("ALTER TABLE notes ADD COLUMN archived INTEGER NOT NULL DEFAULT 0")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_archived ON notes(user_id, archived)")
+        _set_schema_version(conn, 9)
+        version = 9
+
     return version

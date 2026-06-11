@@ -70,6 +70,31 @@ def test_note_task_id_create_filter_patch(client):
     assert client.get("/api/notes?task_id=t-99").json == []
 
 
+def test_note_archive_hides_and_restores(client):
+    today = __import__("datetime").date.today().isoformat()
+    r = client.post("/api/notes", json={"title": "to archive", "date": today})
+    nid = r.json["id"]
+    assert r.json["archived"] is False
+
+    # Visible in the day view before archiving
+    assert any(n["id"] == nid for n in client.get(f"/api/notes?date={today}").json)
+
+    # Archive it
+    r = client.patch(f"/api/notes/{nid}", json={"archived": True})
+    assert r.status_code == 200 and r.json["archived"] is True
+
+    # Gone from normal views, present in the Archived view
+    assert not any(n["id"] == nid for n in client.get(f"/api/notes?date={today}").json)
+    assert not any(n["id"] == nid for n in client.get("/api/notes?all=1").json)
+    assert any(n["id"] == nid for n in client.get("/api/notes?archived=1").json)
+
+    # Unarchive restores it
+    r = client.patch(f"/api/notes/{nid}", json={"archived": False})
+    assert r.json["archived"] is False
+    assert any(n["id"] == nid for n in client.get(f"/api/notes?date={today}").json)
+    assert client.get("/api/notes?archived=1").json == []
+
+
 def test_export_xlsx_neutralizes_formula_injection(client):
     payload = {"filename": "x", "sheets": [{"name": "S", "headers": ["A"],
                "rows": [["=1+2"], ["=HYPERLINK(\"http://evil\")"], ["+cmd"], ["@SUM(1)"], ["-1"], ["safe"]]}]}
