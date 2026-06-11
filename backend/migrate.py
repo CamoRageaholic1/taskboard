@@ -174,4 +174,13 @@ def migrate(conn: sqlite3.Connection) -> int:
         _set_schema_version(conn, 7)
         version = 7
 
+    if version < 8:
+        # v7 -> v8: link a note to a specific board task (task ids also live in
+        # the opaque board blob, so this is an indexed text tag like project_id).
+        if "task_id" not in _table_columns(conn, "notes"):
+            conn.execute("ALTER TABLE notes ADD COLUMN task_id TEXT")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_notes_user_task ON notes(user_id, task_id)")
+        _set_schema_version(conn, 8)
+        version = 8
+
     return version

@@ -3336,7 +3336,7 @@ function getCaretCoordinates(textarea, position) {
 
 // ---------- Notes view (top-level) ----------
 
-function NotesView({ initialDate, initialProject, projects = [], templates, onSaveTemplate }) {
+function NotesView({ initialDate, initialProject, projects = [], templates, onSaveTemplate, onManageTemplates }) {
   const [tplMenu, setTplMenu] = useState(false);
   const noteTemplates = useMemo(() => mergeTemplates('note', templates), [templates]);
   const [scope, setScope] = useState(
@@ -3364,8 +3364,12 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
   useEffect(() => {
     if (initialDate) setScope({ kind: 'date', value: initialDate });
   }, [initialDate]);
+  const pendingFocus = useRef(null);
   useEffect(() => {
-    if (initialProject) setScope({ kind: 'project', id: initialProject.id, name: initialProject.name });
+    if (initialProject) {
+      setScope({ kind: 'project', id: initialProject.id, name: initialProject.name });
+      pendingFocus.current = initialProject.focusNoteId || null;
+    }
   }, [initialProject?.id, initialProject?._t]);
 
   // ---- loaders ----
@@ -3431,6 +3435,10 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
   // Active note auto-pick
   useEffect(() => {
     if (!notes.length) { setActiveId(null); return; }
+    // Honor a pending focus (e.g. opened from a task's linked note) first.
+    if (pendingFocus.current && notes.find(n => n.id === pendingFocus.current)) {
+      setActiveId(pendingFocus.current); pendingFocus.current = null; return;
+    }
     if (!notes.find(n => n.id === activeId)) setActiveId(notes[0].id);
   }, [notes, activeId]);
 
@@ -3726,6 +3734,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
                   <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }}/>
                   <button className="menu-row" style={menuRow} onClick={() => { setTplMenu(false); saveActiveNoteAsTemplate(); }}>＋ Save current note as template</button>
                 </>}
+                {onManageTemplates && <button className="menu-row" style={menuRow} onClick={() => { setTplMenu(false); onManageTemplates(); }}>⚙ Manage templates…</button>}
               </div>
             )}
           </div>
@@ -4317,7 +4326,7 @@ function BackupsModal({ onClose, onRestore }) {
   );
 }
 
-function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, dragHandlers, dropClass }) {
+function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, dragHandlers, dropClass, onOpenTaskNotes, linkProject }) {
   const due = formatDueDate(task.dueDate);
   const subProgress = task.subtasks.length > 0
     ? task.subtasks.filter(s => s.done).length / task.subtasks.length
@@ -4493,8 +4502,41 @@ function TaskRow({ task, project, expanded, onToggleExpand, onUpdate, onDelete, 
           </div>
 
           <Attachments taskId={task.id}/>
+          {onOpenTaskNotes && <TaskNotesPanel task={task} project={linkProject || project} onOpenTaskNotes={onOpenTaskNotes}/>}
         </div>
       )}
+    </div>
+  );
+}
+
+// Notes linked to a single task, shown inside the expanded task card.
+function TaskNotesPanel({ task, project, onOpenTaskNotes }) {
+  const [notes, setNotes] = useState([]);
+  const reload = useCallback(() => fetchTaskNotes(task.id).then(setNotes), [task.id]);
+  useEffect(() => { let a = true; fetchTaskNotes(task.id).then(n => { if (a) setNotes(n); }); return () => { a = false; }; }, [task.id]);
+  const addNote = async () => {
+    const created = await apiCreateNote({ task_id: task.id, project_id: project?.id || null, date: todayStr(), title: task.title });
+    reload();
+    onOpenTaskNotes(created);
+  };
+  return (
+    <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px dashed var(--border)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+        <Icon.Edit size={11}/>
+        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--ink-2)' }}>Notes</span>
+        <span className="meta-pill">{notes.length}</span>
+        <span style={{ flex: 1 }}/>
+        <button className="add-subtask" onClick={(e) => { e.stopPropagation(); addNote(); }}><Icon.Plus size={11}/> Note</button>
+      </div>
+      {notes.map(n => (
+        <div key={n.id} onClick={(e) => { e.stopPropagation(); onOpenTaskNotes(n); }}
+             style={{ display: 'flex', gap: 8, padding: '4px 6px', borderRadius: 5, cursor: 'pointer', alignItems: 'baseline', fontSize: 12.5 }}
+             onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg)'}
+             onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}>
+          <span>{n.title || 'Untitled'}</span>
+          <span style={{ fontSize: 11, color: 'var(--ink-3)' }}>{n.date}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -4562,6 +4604,13 @@ function mergeTemplates(kind, custom) {
 async function fetchProjectNotes(projectId) {
   try {
     const r = await fetch(`/api/notes?project_id=${encodeURIComponent(projectId)}`, { cache: 'no-store' });
+    if (r.ok) return await r.json();
+  } catch (e) {}
+  return [];
+}
+async function fetchTaskNotes(taskId) {
+  try {
+    const r = await fetch(`/api/notes?task_id=${encodeURIComponent(taskId)}`, { cache: 'no-store' });
     if (r.ok) return await r.json();
   } catch (e) {}
   return [];
@@ -4660,7 +4709,7 @@ function LinkedNotesPanel({ project, onOpenNotes, onNewNote }) {
   );
 }
 
-function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenProjectNotes }) {
+function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenProjectNotes, onManageTemplates }) {
   const [filter, setFilter] = useState('all'); // all | open | done
   const [search, setSearch] = useState('');
   const [expandedId, setExpandedId] = useState(null);
@@ -4947,6 +4996,8 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenPro
               onDelete={() => deleteTask(t)}
               dragHandlers={makeDragHandlers(t)}
               dropClass={dropClass}
+              linkProject={data.activeView !== 'project' ? proj : activeProject}
+              onOpenTaskNotes={(note) => onOpenProjectNotes?.((data.activeView !== 'project' ? proj : activeProject), { noteId: note?.id })}
             />
           );
         })}
@@ -5023,6 +5074,7 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenPro
                     ))}
                     <div style={{ borderTop: '1px solid var(--border)', margin: '6px 0' }}/>
                     <button className="menu-row" style={menuRow} onClick={saveProjectAsTemplate}>＋ Save this project as template</button>
+                    {onManageTemplates && <button className="menu-row" style={menuRow} onClick={() => { setHdrMenu(null); onManageTemplates(); }}>⚙ Manage templates…</button>}
                   </div>
                 )}
               </div>
@@ -5108,6 +5160,93 @@ function MainView({ data, setData, newTaskTrigger, focusSearchTrigger, onOpenPro
         )}
       </div>
     </main>
+  );
+}
+
+// Manage custom templates (the ones saved into the board blob). Built-ins are
+// listed read-only for reference. Task templates support rename/delete; note
+// templates also support editing the body.
+function TemplatesModal({ templates, setTemplates, onClose }) {
+  const customTask = (templates && templates.task) || [];
+  const customNote = (templates && templates.note) || [];
+  const [editing, setEditing] = useState(null); // { idx, body }
+
+  const del = (kind, idx) => {
+    if (!confirm('Delete this template?')) return;
+    setTemplates(t => { const arr = [...((t && t[kind]) || [])]; arr.splice(idx, 1); return { ...(t || {}), [kind]: arr }; });
+  };
+  const rename = (kind, idx, curName) => {
+    const name = (prompt('Rename template:', curName) || '').trim();
+    if (!name) return;
+    setTemplates(t => { const arr = [...((t && t[kind]) || [])]; arr[idx] = { ...arr[idx], name }; return { ...(t || {}), [kind]: arr }; });
+  };
+  const saveBody = () => {
+    setTemplates(t => { const arr = [...((t && t.note) || [])]; arr[editing.idx] = { ...arr[editing.idx], body: editing.body }; return { ...(t || {}), note: arr }; });
+    setEditing(null);
+  };
+
+  const overlay = { position: 'fixed', inset: 0, zIndex: 9000, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 };
+  const card = { background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 12, width: 'min(640px, 96vw)', maxHeight: '88vh', overflow: 'auto', boxShadow: '0 12px 40px rgba(0,0,0,0.3)' };
+  const row = { display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', border: '1px solid var(--border)', borderRadius: 7, marginBottom: 6 };
+  const sectLabel = { fontSize: 11, textTransform: 'uppercase', letterSpacing: '.05em', color: 'var(--ink-3)', margin: '16px 0 8px' };
+  const linkBtn = { background: 'transparent', border: '1px solid var(--border)', borderRadius: 5, padding: '4px 8px', cursor: 'pointer', font: 'inherit', fontSize: 12, color: 'var(--ink-2)' };
+
+  return (
+    <div style={overlay} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={card}>
+        <div style={{ display: 'flex', alignItems: 'center', padding: '14px 16px', borderBottom: '1px solid var(--border)' }}>
+          <strong style={{ fontSize: 15 }}>Manage templates</strong>
+          <span style={{ flex: 1 }}/>
+          <button style={linkBtn} onClick={onClose}><Icon.X size={12}/></button>
+        </div>
+        <div style={{ padding: '8px 16px 18px' }}>
+          {editing ? (
+            <div>
+              <div style={sectLabel}>Edit note template body</div>
+              <textarea value={editing.body} onChange={(e) => setEditing(s => ({ ...s, body: e.target.value }))}
+                style={{ width: '100%', minHeight: 280, font: '12px ui-monospace, monospace', padding: 10,
+                         border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', color: 'var(--ink)' }}/>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <button className="btn btn-primary" onClick={saveBody}>Save</button>
+                <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div style={sectLabel}>Your task templates ({customTask.length})</div>
+              {customTask.length === 0 && <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 6 }}>None yet — save one from a project’s “Template ▾” menu.</div>}
+              {customTask.map((t, i) => (
+                <div key={i} style={row}>
+                  <span style={{ fontSize: 13 }}>★ {t.name}</span>
+                  <span className="meta-pill">{(t.tasks || []).length} tasks</span>
+                  <span style={{ flex: 1 }}/>
+                  <button style={linkBtn} onClick={() => rename('task', i, t.name)}>Rename</button>
+                  <button style={{ ...linkBtn, color: 'var(--danger, #a04040)' }} onClick={() => del('task', i)}>Delete</button>
+                </div>
+              ))}
+
+              <div style={sectLabel}>Your note templates ({customNote.length})</div>
+              {customNote.length === 0 && <div style={{ color: 'var(--ink-3)', fontSize: 12, marginBottom: 6 }}>None yet — save one from the notes “＋ Template” menu.</div>}
+              {customNote.map((t, i) => (
+                <div key={i} style={row}>
+                  <span style={{ fontSize: 13 }}>★ {t.name}</span>
+                  <span style={{ flex: 1 }}/>
+                  <button style={linkBtn} onClick={() => setEditing({ idx: i, body: t.body || '' })}>Edit body</button>
+                  <button style={linkBtn} onClick={() => rename('note', i, t.name)}>Rename</button>
+                  <button style={{ ...linkBtn, color: 'var(--danger, #a04040)' }} onClick={() => del('note', i)}>Delete</button>
+                </div>
+              ))}
+
+              <div style={sectLabel}>Built-in (read-only)</div>
+              <div style={{ fontSize: 12, color: 'var(--ink-3)' }}>
+                Tasks: {BUILTIN_TEMPLATES.task.map(t => t.name).join(', ')}<br/>
+                Notes: {BUILTIN_TEMPLATES.note.map(t => t.name).join(', ')}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -5264,6 +5403,7 @@ function App() {
   const [feedOpen, setFeedOpen] = useState(false);
   const [twoFAOpen, setTwoFAOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [tplModalOpen, setTplModalOpen] = useState(false);
   const [notesInitialDate, setNotesInitialDate] = useState(null);
   const [notesInitialProject, setNotesInitialProject] = useState(null);
   const newTaskRequestRef = useRef(0);
@@ -5365,13 +5505,15 @@ function App() {
       {data.activeView === 'notes'
         ? <NotesView initialDate={notesInitialDate} initialProject={notesInitialProject} projects={data.projects}
             templates={data.templates}
+            onManageTemplates={() => setTplModalOpen(true)}
             onSaveTemplate={(kind, tpl) => setData(d => ({ ...d, templates: { ...(d.templates || {}), [kind]: [...((d.templates || {})[kind] || []), tpl] } }))}/>
         : <MainView
             data={data}
             setData={setData}
             newTaskTrigger={newTaskRequestRef.current}
             focusSearchTrigger={focusSearchRef.current}
-            onOpenProjectNotes={(proj) => { setNotesInitialProject({ id: proj.id, name: proj.name, _t: Date.now() }); setData(d => ({ ...d, activeView: 'notes' })); }}
+            onOpenProjectNotes={(proj, focus) => { if (!proj) return; setNotesInitialProject({ id: proj.id, name: proj.name, focusNoteId: focus?.noteId || null, _t: Date.now() }); setData(d => ({ ...d, activeView: 'notes' })); }}
+            onManageTemplates={() => setTplModalOpen(true)}
           />
       }
       <input
@@ -5392,6 +5534,10 @@ function App() {
       {feedOpen && <CalendarFeedModal onClose={() => setFeedOpen(false)}/>}
       {twoFAOpen && <TwoFactorModal onClose={() => setTwoFAOpen(false)}/>}
       {helpOpen && <ShortcutsModal onClose={() => setHelpOpen(false)}/>}
+      {tplModalOpen && <TemplatesModal
+        templates={data.templates}
+        setTemplates={(updater) => setData(d => ({ ...d, templates: typeof updater === 'function' ? updater(d.templates || {}) : updater }))}
+        onClose={() => setTplModalOpen(false)}/>}
     </>
   );
 }

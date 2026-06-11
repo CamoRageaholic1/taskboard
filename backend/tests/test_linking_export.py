@@ -52,5 +52,23 @@ def test_export_xlsx_round_trip(client):
     assert ws["A2"].value == "Pull cable"
 
 
+def test_note_task_id_create_filter_patch(client):
+    r = client.post("/api/notes", json={"title": "task note", "project_id": "p1", "task_id": "t-99"})
+    assert r.status_code == 201, r.data
+    nid = r.json["id"]
+    assert r.json["task_id"] == "t-99"
+    assert r.json["project_id"] == "p1"
+
+    client.post("/api/notes", json={"title": "other"})
+    r = client.get("/api/notes?task_id=t-99")
+    assert [n["id"] for n in r.json] == [nid]
+
+    # Unlink the task
+    r = client.patch(f"/api/notes/{nid}", json={"task_id": ""})
+    assert r.status_code == 200
+    assert r.json["task_id"] is None
+    assert client.get("/api/notes?task_id=t-99").json == []
+
+
 def test_export_xlsx_requires_auth(anon_client):
     assert anon_client.post("/api/export/xlsx", json={"sheets": []}).status_code == 401

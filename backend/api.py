@@ -399,10 +399,11 @@ def _note_dict(row):
         "sort_order": row[7] if len(row) > 7 else 0,
         "notebook_id": row[8] if len(row) > 8 else None,
         "project_id": row[9] if len(row) > 9 else None,
+        "task_id": row[10] if len(row) > 10 else None,
     }
 
 
-_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id"
+_NOTE_COLS = "id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id,task_id"
 
 
 def _extract_tags(body: str) -> list[str]:
@@ -431,6 +432,7 @@ def list_notes():
     uid = current_user_id()
     notebook_id = request.args.get("notebook_id")
     project_id = request.args.get("project_id")
+    task_id = request.args.get("task_id")
     all_flag = request.args.get("all") == "1"
     pinned_flag = request.args.get("pinned") == "1"
     tag = request.args.get("tag")
@@ -450,6 +452,10 @@ def list_notes():
     elif notebook_id:
         where.append("notebook_id=?")
         params.append(notebook_id)
+    elif task_id:
+        where.append("task_id=?")
+        params.append(task_id)
+        order = "ORDER BY pinned DESC, updated_at DESC"
     elif project_id:
         where.append("project_id=?")
         params.append(project_id)
@@ -649,9 +655,10 @@ def create_note():
             ).fetchone()
         sort_order = row[0] if row else 0
         conn.execute(
-            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (nid, uid, date, title, body, ts, ts, pinned, sort_order, notebook_id, payload.get("project_id") or None),
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id,task_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, date, title, body, ts, ts, pinned, sort_order, notebook_id,
+             payload.get("project_id") or None, payload.get("task_id") or None),
         )
         row = conn.execute(
             f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)
@@ -699,6 +706,13 @@ def update_note(note_id):
         else:
             sets.append("project_id=?")
             params.append(str(pid)[:64])
+    if "task_id" in payload:
+        tid = payload["task_id"]
+        if tid in ("", None):
+            sets.append("task_id=NULL")
+        else:
+            sets.append("task_id=?")
+            params.append(str(tid)[:64])
     if not sets:
         return jsonify(error="no fields to update"), 400
     sets.append("updated_at=?")
@@ -765,9 +779,10 @@ def duplicate_note(note_id):
         ts = now_iso()
         new_title = (row[2] or "Untitled") + " (copy)"
         conn.execute(
-            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id) "
-            "VALUES(?,?,?,?,?,?,?,?,?,?,?)",
-            (nid, uid, row[1], new_title, row[3], ts, ts, 0, (row[7] or 0) + 1, row[8], row[9] if len(row) > 9 else None),
+            "INSERT INTO notes(id,user_id,date,title,body,created_at,updated_at,pinned,sort_order,notebook_id,project_id,task_id) "
+            "VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+            (nid, uid, row[1], new_title, row[3], ts, ts, 0, (row[7] or 0) + 1, row[8],
+             row[9] if len(row) > 9 else None, row[10] if len(row) > 10 else None),
         )
         new_row = conn.execute(f"SELECT {_NOTE_COLS} FROM notes WHERE id=?", (nid,)).fetchone()
     return jsonify(_note_dict(new_row)), 201
