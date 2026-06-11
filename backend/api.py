@@ -195,6 +195,26 @@ def put_data():
     return jsonify(ok=True, updated_at=ts)
 
 
+@APP.get("/api/sync/state")
+@require_user
+def sync_state():
+    """Cheap change-signature for cross-device live sync. Clients poll this and
+    only refetch data when a signature changes. notes = MAX(updated_at):COUNT
+    (the count catches deletes); board = the state row's updated_at."""
+    uid = current_user_id()
+    with db() as conn:
+        nrow = conn.execute(
+            "SELECT COALESCE(MAX(updated_at),''), COUNT(*) FROM notes WHERE user_id=?", (uid,)
+        ).fetchone()
+        brow = conn.execute(
+            "SELECT updated_at FROM state WHERE user_id=?", (uid,)
+        ).fetchone()
+    return jsonify(
+        notes=f"{nrow[0]}:{nrow[1]}",
+        board=(brow[0] if brow else ""),
+    )
+
+
 # ---------- attachments ----------
 
 @APP.get("/api/attachments")

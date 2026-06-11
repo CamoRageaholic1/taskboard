@@ -1614,12 +1614,22 @@ async function fetchSession() {
 }
 let _saveTimer = null;
 let _lastPosted = '';
+let _boardDirty = false;
+function boardIsDirty() { return _boardDirty; }
+// Called when applying a board fetched from the server (live sync), so the
+// auto-save that setData triggers recognizes it as already-synced and skips the
+// POST — preventing a cross-device save↔fetch ping-pong.
+function markBoardSynced(data) {
+  try { _lastPosted = JSON.stringify({ data }); } catch (e) {}
+  _boardDirty = false;
+}
 function saveData(data) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) {}
   if (_saveTimer) clearTimeout(_saveTimer);
   _saveTimer = setTimeout(async () => {
     const body = JSON.stringify({ data });
     if (body === _lastPosted) return;
+    _boardDirty = true;
     try {
       const r = await fetch('/api/data', {
         method: 'POST',
@@ -1627,7 +1637,7 @@ function saveData(data) {
         body,
       });
       if (r.status === 401) { location.replace('/login.html'); return; }
-      if (r.ok) _lastPosted = body;
+      if (r.ok) { _lastPosted = body; _boardDirty = false; }
     } catch (e) {}
   }, 500);
 }
@@ -3353,9 +3363,12 @@ function getCaretCoordinates(textarea, position) {
 
 // ---------- Notes view (top-level) ----------
 
-function NotesView({ initialDate, initialProject, projects = [], templates, onSaveTemplate, onManageTemplates }) {
+function NotesView({ initialDate, initialProject, projects = [], templates, onSaveTemplate, onManageTemplates, syncNonce = 0 }) {
   const [tplMenu, setTplMenu] = useState(false);
   const noteTemplates = useMemo(() => mergeTemplates('note', templates), [templates]);
+  const [staleActive, setStaleActive] = useState(false); // active note changed on another device
+  const [reloadNonce, setReloadNonce] = useState(0);
+  const shownUpdatedAt = useRef(null);
   const [scope, setScope] = useState(
     initialProject ? { kind: 'project', id: initialProject.id, name: initialProject.name }
     : initialDate ? { kind: 'date', value: initialDate } : { kind: 'today', value: todayStr() }
@@ -3436,6 +3449,15 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
   useEffect(() => { loadNotes(); }, [loadNotes]);
   useEffect(() => { loadNotebooks(); loadTags(); loadDates(); loadTitles(); }, [loadNotebooks, loadTags, loadDates, loadTitles]);
 
+  // Live sync nudge from App (another device changed notes): soft-reload the
+  // current view's data. The open editor is protected (it only re-syncs on a
+  // note-id change), so this never clobbers what you're typing.
+  const firstSync = useRef(true);
+  useEffect(() => {
+    if (firstSync.current) { firstSync.current = false; return; }
+    loadNotes(); loadTitles(); loadTags(); loadDates(); loadNotebooks();
+  }, [syncNonce]); // eslint-disable-line
+
   // BroadcastChannel: refresh on changes from other tabs
   useEffect(() => {
     if (!NOTES_CHANNEL) return;
@@ -3472,10 +3494,31 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
   const activeNote = useMemo(() => notes.find(n => n.id === activeId) || null, [notes, activeId]);
   const activeNote2 = useMemo(() => notes.find(n => n.id === activeId2) || null, [notes, activeId2]);
 
+  // Track the version of the active note the editor is currently showing, so a
+  // remote edit (from another device) can be detected without false-flagging
+  // the user's own local saves. Baseline resets when a different note is opened.
+  useEffect(() => {
+    shownUpdatedAt.current = activeNote ? activeNote.updated_at : null;
+    setStaleActive(false);
+  }, [activeId]); // eslint-disable-line
+  useEffect(() => {
+    if (activeNote && shownUpdatedAt.current && activeNote.updated_at &&
+        activeNote.updated_at > shownUpdatedAt.current) {
+      setStaleActive(true);
+    }
+  }, [notes]); // eslint-disable-line
+
   // Update local note state after edits (without full reload)
   const applyNoteUpdate = (updated) => {
     setNotes(prev => prev.map(n => n.id === updated.id ? { ...n, ...updated } : n));
   };
+  // Editor onChange: apply locally AND advance the active-note baseline so the
+  // user's own save isn't mistaken for a remote change.
+  const handleNoteChange = (updated) => {
+    applyNoteUpdate(updated);
+    if (updated.id === activeId && updated.updated_at) shownUpdatedAt.current = updated.updated_at;
+  };
+  const loadLatestActive = () => { shownUpdatedAt.current = activeNote ? activeNote.updated_at : null; setStaleActive(false); setReloadNonce(n => n + 1); };
 
   // ---- actions ----
   const createNote = async () => {
@@ -3848,7 +3891,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
                 note={activeNote}
                 allTitles={allTitles}
                 prefs={prefs} setPrefs={setPrefs}
-                onChange={applyNoteUpdate}
+                onChange={handleNoteChange}
                 onDelete={() => removeNote(activeNote.id)}
                 onTogglePin={() => togglePin(activeNote)}
                 onToggleArchive={() => archiveNote(activeNote)}
@@ -3879,7 +3922,7 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
                   note={activeNote2}
                   allTitles={allTitles}
                   prefs={prefs} setPrefs={setPrefs}
-                  onChange={applyNoteUpdate}
+                  onChange={handleNoteChange}
                   onDelete={() => removeNote(activeNote2.id)}
                   onTogglePin={() => togglePin(activeNote2)}
                   onToggleArchive={() => archiveNote(activeNote2)}
@@ -3896,25 +3939,36 @@ function NotesView({ initialDate, initialProject, projects = [], templates, onSa
               </div>
             </div>
           ) : (
-            <NoteEditor
-              key={activeNote.id}
-              note={activeNote}
-              allTitles={allTitles}
-              prefs={prefs} setPrefs={setPrefs}
-              onChange={applyNoteUpdate}
-              onDelete={() => removeNote(activeNote.id)}
-              onTogglePin={() => togglePin(activeNote)}
-              onToggleArchive={() => archiveNote(activeNote)}
-              onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
-              onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
-              projects={projects}
-              onDuplicate={() => duplicateNote(activeNote.id)}
-              onOpenWikiLink={openWikiLink}
-              onJumpToTag={jumpToTag}
-              notebooks={notebooks}
-              twoUp={twoUp}
-              onToggleTwoUp={() => setTwoUp(t => !t)}
-            />
+            <div style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+              {staleActive && (
+                <div onClick={loadLatestActive}
+                     style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer',
+                              padding: '7px 12px', background: 'var(--accent)', color: '#fff', fontSize: 12.5 }}
+                     title="This note was edited on another device">
+                  <Icon.Repeat size={12}/>
+                  <span>Updated on another device — tap to load the latest version.</span>
+                </div>
+              )}
+              <NoteEditor
+                key={activeNote.id + ':' + reloadNonce}
+                note={activeNote}
+                allTitles={allTitles}
+                prefs={prefs} setPrefs={setPrefs}
+                onChange={handleNoteChange}
+                onDelete={() => removeNote(activeNote.id)}
+                onTogglePin={() => togglePin(activeNote)}
+                onToggleArchive={() => archiveNote(activeNote)}
+                onMoveToNotebook={(id) => moveNoteToNotebook(activeNote.id, id)}
+                onSetProject={(pid) => setProjectForNote(activeNote.id, pid)}
+                projects={projects}
+                onDuplicate={() => duplicateNote(activeNote.id)}
+                onOpenWikiLink={openWikiLink}
+                onJumpToTag={jumpToTag}
+                notebooks={notebooks}
+                twoUp={twoUp}
+                onToggleTwoUp={() => setTwoUp(t => !t)}
+              />
+            </div>
           )}
         </div>
       </div>
@@ -5314,6 +5368,43 @@ function NetBadge() {
   );
 }
 
+// Cross-device live sync: poll the cheap /api/sync/state signature and fire
+// callbacks only when something actually changed. Visibility-aware (no polling
+// while the tab is hidden), with an immediate poll on focus / tab-visible /
+// reconnect so it feels instant when you pick a device back up.
+function useLiveSync({ onNotes, onBoard }) {
+  const last = useRef({ notes: null, board: null });
+  const cbs = useRef({ onNotes, onBoard });
+  cbs.current = { onNotes, onBoard };
+  useEffect(() => {
+    let timer = null, stopped = false;
+    const poll = async () => {
+      if (stopped || document.hidden || !navigator.onLine) return;
+      try {
+        const r = await fetch('/api/sync/state', { cache: 'no-store' });
+        if (!r.ok) return;
+        const sig = await r.json();
+        const prev = last.current;
+        if (prev.notes === null) { last.current = { notes: sig.notes, board: sig.board }; return; }
+        if (sig.notes !== prev.notes) { last.current.notes = sig.notes; cbs.current.onNotes?.(); }
+        if (sig.board !== prev.board) { last.current.board = sig.board; cbs.current.onBoard?.(); }
+      } catch (e) {}
+    };
+    const schedule = () => { timer = setTimeout(async () => { await poll(); if (!stopped) schedule(); }, 12000); };
+    const kick = () => { poll(); };
+    schedule();
+    const onVis = () => { if (!document.hidden) kick(); };
+    window.addEventListener('focus', kick);
+    window.addEventListener('online', kick);
+    document.addEventListener('visibilitychange', onVis);
+    return () => {
+      stopped = true; if (timer) clearTimeout(timer);
+      window.removeEventListener('focus', kick); window.removeEventListener('online', kick);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+  }, []);
+}
+
 function App() {
   const [data, setData] = useState(loadData);
   const [theme, setTheme] = useState(loadTheme);
@@ -5435,6 +5526,19 @@ function App() {
   const [twoFAOpen, setTwoFAOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [tplModalOpen, setTplModalOpen] = useState(false);
+  const [notesSyncNonce, setNotesSyncNonce] = useState(0);
+
+  // Live sync: refetch the board when another device changed it (but never
+  // while we have unsaved local board edits), and nudge NotesView to reload.
+  const liveRefetchBoard = useCallback(async () => {
+    if (boardIsDirty()) return;
+    const fresh = await fetchServerData();
+    if (fresh) { markBoardSynced(fresh); setData(fresh); }
+  }, []);
+  useLiveSync({
+    onNotes: () => setNotesSyncNonce(n => n + 1),
+    onBoard: liveRefetchBoard,
+  });
   const [notesInitialDate, setNotesInitialDate] = useState(null);
   const [notesInitialProject, setNotesInitialProject] = useState(null);
   const newTaskRequestRef = useRef(0);
@@ -5536,6 +5640,7 @@ function App() {
       {data.activeView === 'notes'
         ? <NotesView initialDate={notesInitialDate} initialProject={notesInitialProject} projects={data.projects}
             templates={data.templates}
+            syncNonce={notesSyncNonce}
             onManageTemplates={() => setTplModalOpen(true)}
             onSaveTemplate={(kind, tpl) => setData(d => ({ ...d, templates: { ...(d.templates || {}), [kind]: [...((d.templates || {})[kind] || []), tpl] } }))}/>
         : <MainView

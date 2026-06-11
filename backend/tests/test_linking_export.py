@@ -109,5 +109,24 @@ def test_export_xlsx_neutralizes_formula_injection(client):
     assert ws["A2"].value == "=1+2"  # preserved, but as text
 
 
+def test_sync_state_signature_changes(client):
+    s0 = client.get("/api/sync/state").json
+    assert "notes" in s0 and "board" in s0
+
+    # Adding a note changes the notes signature
+    client.post("/api/notes", json={"title": "x"})
+    s1 = client.get("/api/sync/state").json
+    assert s1["notes"] != s0["notes"]
+
+    # Saving the board changes the board signature
+    client.post("/api/data", json={"data": {"projects": []}})
+    s2 = client.get("/api/sync/state").json
+    assert s2["board"] != s1["board"]
+
+
+def test_sync_state_requires_auth(anon_client):
+    assert anon_client.get("/api/sync/state").status_code == 401
+
+
 def test_export_xlsx_requires_auth(anon_client):
     assert anon_client.post("/api/export/xlsx", json={"sheets": []}).status_code == 401
