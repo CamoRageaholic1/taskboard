@@ -210,7 +210,7 @@
 
   // If already logged in, skip the form
   fetch('/api/session').then(r => r.json()).then(j => {
-    if (j.authenticated) location.replace(j.role === 'admin' ? '/' : '/');
+    if (j.authenticated) location.replace('/');
   }).catch(() => {});
 
   const totpForm = document.getElementById('totpForm');

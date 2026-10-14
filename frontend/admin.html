@@ -102,7 +102,7 @@
 </head>
 <body>
 <header>
-  <h1><span class="mark">·</span>Taskboard <span style="color: var(--ink-3); font-size: 16px; font-family: Inter; font-weight: 500;">Admin</span></h1>
+  <h1><span class="mark">·</span>Taskboard <span style="color: var(--ink-3); font-size: 16px; font-family: 'Inter', -apple-system, sans-serif; font-weight: 500;">Admin</span></h1>
   <div class="links">
     <a href="/">Back to board</a>
     <a href="#" id="logout">Sign out</a>
@@ -120,15 +120,15 @@
     <h2>Create user</h2>
     <form id="create-form" class="new-user">
       <div>
-        <label>Username</label>
+        <label for="cu">Username</label>
         <input id="cu" required pattern="[a-zA-Z0-9_-]{1,32}" placeholder="alice"/>
       </div>
       <div>
-        <label>Password (leave blank to auto-generate)</label>
+        <label for="cp">Password (leave blank to auto-generate)</label>
         <input id="cp" type="text" placeholder="auto"/>
       </div>
       <div>
-        <label>Role</label>
+        <label for="cr">Role</label>
         <select id="cr"><option value="user">user</option><option value="admin">admin</option></select>
       </div>
       <button class="primary" type="submit">Create</button>
@@ -249,7 +249,7 @@ async function autoPassword() {
   let chars = sets.map((s, i) => s[arr[i] % s.length]);
   for (let i = 4; i < 16; i++) chars.push(all[arr[i] % all.length]);
   for (let i = chars.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
+    const j = crypto.getRandomValues(new Uint32Array(1))[0] % (i + 1);
     [chars[i], chars[j]] = [chars[j], chars[i]];
   }
   return chars.join('');
