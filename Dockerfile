@@ -14,7 +14,7 @@
 #
 # slim-bookworm matches Debian on the Pi; bcrypt ships pre-built wheels
 # for amd64 + arm64 so no compiler toolchain is needed.
-FROM python:3.11-slim-bookworm
+FROM python:3.14-slim-bookworm
 
 # Single layer for system needs: curl is only used by HEALTHCHECK below.
 RUN apt-get update \
