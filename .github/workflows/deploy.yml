@@ -15,7 +15,7 @@ jobs:
     runs-on: [self-hosted, taskboard-ct202]
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with: { clean: true }
 
       - name: Sync repo into /opt/taskboard
